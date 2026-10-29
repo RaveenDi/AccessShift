@@ -62,4 +62,4 @@ Separate measured geometry from model extraction. The domain modules must run on
 
 Build order: geometry probe → calibrated physical observation → model constraint/footprint extraction → bounded moves → recapture verification → minimal UI → unseen-layout evaluation → demo. The observed before/after loop matters more than a polished room editor.
 
-Allow at most three hours for this candidate's first gate. If all finalists are probed, the shared allocation is 8 hours selection, 21 implementation, 6 integration/evaluation, 8 deployment/video/docs and 2 buffer = **45 hours**. See [shared budget](../../drawn-to-scale/docs/03-PROJECT-STRUCTURE.md). Do not independently spend that amount on all three candidates.
+Allow at most three hours for this candidate's first gate. If all finalists are probed, the shared allocation is 8 hours selection, 21 implementation, 6 integration/evaluation, 8 deployment/video/docs and 2 buffer = **45 hours**. See shared budget. Do not independently spend that amount on all three candidates.

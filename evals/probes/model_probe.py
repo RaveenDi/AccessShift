@@ -158,7 +158,7 @@ def main():
     output = args.output or HERE / "private" / (datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S%fZ") + ".json")
     private_root = (HERE / "private").resolve()
     if not output.resolve().is_relative_to(private_root):
-        raise ValueError("Keep model output under this probe's gitignored spike/private directory")
+        raise ValueError("Keep model output under this probe's gitignored evals/probes/private directory")
     if output.exists():
         raise ValueError("Output already exists; choose a new filename")
     request_body = {"model": model,

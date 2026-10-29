@@ -47,6 +47,6 @@ Verification compares recaptured geometry to expected poses within a declared to
 
 ## Runtime and testing
 
-Reuse the [base run/service pattern](../../drawn-to-scale/docs/02-ARCHITECTURE.md): server-only credentials, bounded worker, persisted stages, interrupted-run retry, request access tokens, input limits and versioned model/prompt/capture evidence. States: measuring → needs_confirmation → planning → awaiting_recapture → verifying → ready/needs_remeasurement, with failure/cancel paths.
+Reuse the base run/service pattern: server-only credentials, bounded worker, persisted stages, interrupted-run retry, request access tokens, input limits and versioned model/prompt/capture evidence. States: measuring → needs_confirmation → planning → awaiting_recapture → verifying → ready/needs_remeasurement, with failure/cancel paths.
 
 Unit tests cover units, locked objects, overlap, path boundaries, no-solution limits and optimization cost. Integration covers model failure, stale images and unknown identity. Model evaluation measures footprint error against a ruler/reference drawing and constraint extraction against a hand-written expected schema. Physical test evaluation reports route agreement and after-state detection over unseen layouts. Mock extraction never counts as model evidence.

@@ -1,0 +1,15 @@
+.git
+.venv
+**/node_modules
+**/__pycache__
+.pytest_cache
+private
+data
+.env
+.env.*
+!.env.example
+docs
+.claude
+.github
+**/dist
+apps/api/demo_data

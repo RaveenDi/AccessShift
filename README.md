@@ -20,4 +20,19 @@ API: `POST /api/runs` (photo, board_w_cm, board_h_cm, check_len_cm, constraint_t
 Copy `.env.example` to `.env`, set `MODEL_API_KEY`, `MODEL_PROVIDER=meta`. Endpoint shapes in `apps/api/app/providers/meta.py` are UNVERIFIED and must be checked against dev.meta.ai first.
 
 ## Layout
-`apps/api` (domain, providers, pipeline, tests) · `apps/web/index.html` (no build step) · `scripts/make_demo.py` · `docs/AGENT-ARCHITECTURE.md` · `docs/` planning · `spike/` original probe.
+`apps/api` (domain, providers, pipeline, tests) · `apps/web/index.html` (no build step) · `scripts/make_demo.py` · `docs/architecture/agent-architecture.md` · `docs/` planning · `evals/probes/` original probe.
+
+
+## Repository layout
+
+```
+apps/api/        FastAPI service (agents, providers, domain logic, tests)
+apps/web/        user interface
+evals/           evaluation runners, fixtures and feasibility probes (evals/probes)
+scripts/         demo data and local tooling
+docs/            architecture/, deployment.md, planning/
+.claude/skills/  agent-architecture, harness, evaluation, deployment skills
+Dockerfile  docker-compose.yml  .github/workflows/ci.yml
+```
+
+Deploy: see [docs/deployment.md](docs/deployment.md).

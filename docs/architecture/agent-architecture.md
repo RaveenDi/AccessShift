@@ -33,7 +33,7 @@ Run states: measuring -> needs_confirmation -> planning -> awaiting_recapture ->
 - Upload size and image size limits; constraint text capped at 2000 chars and treated as data.
 
 ## Evaluation plan (NOT yet run)
-1. Real-photo gate in `docs/04-FEASIBILITY-TEST.md`: footprint error vs ruler (target 5 mm on 600 mm board), connectivity agreement on 4 layouts, correct and wrong physical move.
+1. Real-photo gate in `docs/planning/04-FEASIBILITY-TEST.md`: footprint error vs ruler (target 5 mm on 600 mm board), connectivity agreement on 4 layouts, correct and wrong physical move.
 2. Constraint extraction vs hand-written expected schema (Spark).
 3. Manual-rectangle baseline: time to correct model footprints vs drawing them.
 4. Never send expected moves or ground truth to a model.

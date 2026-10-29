@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+    volumes:
+      - app-data:/app/apps/api/demo_data
+    restart: unless-stopped
+volumes:
+  app-data:

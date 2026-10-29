@@ -16,10 +16,10 @@ Ideal discrete cells are supplied. No photographed footprint measurement, SAM se
 
 The hand-authored `fixture.synthetic.json` is validator input, not a captured model response. The local checks are small engineering probes, not benchmark results or evidence of adoption, time saved, field safety or winning odds.
 
-Reproduce with `python spike/check_core.py` and `python spike/check_probe.py` from this project folder. Saved machine-readable output: [results/local-checks.json](../spike/results/local-checks.json). These scripts and reports may be published only under the eventual project/data rules; they do not constitute a submitted product.
+Reproduce with `python evals/probes/check_core.py` and `python evals/probes/check_probe.py` from this project folder. Saved machine-readable output: [results/local-checks.json](../../evals/probes/results/local-checks.json). These scripts and reports may be published only under the eventual project/data rules; they do not constitute a submitted product.
 
 ## Next evidence needed
 
 Prepare a measured tabletop scene and independent ground-truth layouts. Test image calibration and real footprints before adding the full planner interface.
 
-Record every live attempt, failure and correction. Store model outputs under the local gitignored `spike/private/` directory until reviewed for sharing. Update this record after the real test; do not relabel a synthetic pass as a model pass.
+Record every live attempt, failure and correction. Store model outputs under the local gitignored `evals/probes/private/` directory until reviewed for sharing. Update this record after the real test; do not relabel a synthetic pass as a model pass.
