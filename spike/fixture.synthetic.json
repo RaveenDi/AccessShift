@@ -1,0 +1,27 @@
+{
+  "objects": [
+    {
+      "id": "desk",
+      "label": "desk",
+      "bbox": [
+        0.1,
+        0.2,
+        0.4,
+        0.5
+      ],
+      "mobility": "locked",
+      "evidence": "Synthetic explicit user lock"
+    }
+  ],
+  "constraints": [
+    {
+      "kind": "lock",
+      "target_id": "desk",
+      "value": "true",
+      "evidence": "Synthetic user instruction to keep the desk fixed"
+    }
+  ],
+  "unresolved": [
+    "Hand-authored validator fixture, not a camera measurement."
+  ]
+}

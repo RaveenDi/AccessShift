@@ -1,0 +1,109 @@
+{
+  "title": "layout_observations",
+  "type": "object",
+  "properties": {
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "bbox": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "maxItems": 4,
+            "minItems": 4
+          },
+          "mobility": {
+            "type": "string",
+            "enum": [
+              "locked",
+              "movable",
+              "unknown"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "maxLength": 250
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "bbox",
+          "mobility",
+          "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 12,
+      "minItems": 0
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "lock",
+              "max_moves",
+              "required_clearance",
+              "start",
+              "destination",
+              "other"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 150
+          },
+          "evidence": {
+            "type": "string",
+            "maxLength": 250
+          }
+        },
+        "required": [
+          "kind",
+          "target_id",
+          "value",
+          "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 12,
+      "minItems": 0
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 250
+      },
+      "maxItems": 12,
+      "minItems": 0
+    }
+  },
+  "required": [
+    "objects",
+    "constraints",
+    "unresolved"
+  ],
+  "additionalProperties": false
+}

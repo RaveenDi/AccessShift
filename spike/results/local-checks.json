@@ -1,0 +1,40 @@
+{
+  "recorded_date_slt": "2026-10-29",
+  "project": "AccessShift",
+  "core_command": "python access-shift/spike/check_core.py",
+  "core": {
+    "kind": "synthetic_discrete_grid_only",
+    "checks": {
+      "full_barrier_blocks_route": true,
+      "one_move_opens_route": true,
+      "zero_moves_preferred_when_open": true,
+      "locked_objects_preserved": true,
+      "locked_blocker_no_solution_in_declared_set": true,
+      "invalid_candidates_not_selected": true,
+      "wrong_after_state_detected_even_if_route_open": true,
+      "input_scene_not_mutated": true
+    },
+    "passed": 8,
+    "total": 8,
+    "candidate_move_limit": 1,
+    "model_tested": false,
+    "physical_measurement_tested": false
+  },
+  "client_command": "python access-shift/spike/check_probe.py",
+  "client": {
+    "kind": "local_client_validation_only",
+    "checks": {
+      "hand_authored_fixture_valid": true,
+      "unexpected_field_rejected": true,
+      "missing_required_field_rejected": true,
+      "bad_semantic_reference_or_geometry_rejected": true,
+      "bad_type_or_enum_rejected": true,
+      "default_reads_no_key_and_sends_no_request": true
+    },
+    "passed": 6,
+    "total": 6,
+    "model_calls": 0
+  },
+  "live_model_calls": 0,
+  "product_gate": "NOT_TESTED"
+}
