@@ -7,26 +7,11 @@ import base64
 import json
 
 import cv2
-import httpx
 import numpy as np
 
+from ..config import PROMPT_VERSIONS
 from .base import ConstraintSpec, DetectedObject, ModelTurn, PerceptionResult, ProviderError, ToolCall
-
-BASE = "https://api.meta.ai/v1"
-
-
-class _Client:
-    def __init__(self, api_key: str, transport: httpx.BaseTransport | None = None, timeout: float = 60):
-        self.http = httpx.Client(base_url=BASE, headers={"Authorization": f"Bearer {api_key}"},
-                                 timeout=timeout, transport=transport)
-
-    def post(self, path: str, payload: dict) -> dict:
-        try:
-            r = self.http.post(path, json=payload)
-            r.raise_for_status()
-            return r.json()
-        except (httpx.HTTPError, ValueError) as e:
-            raise ProviderError(f"meta api call failed: {type(e).__name__}") from e
+from .http import BASE, ModelClient as _Client  # noqa: F401
 
 
 def _png_b64(img: np.ndarray) -> str:
@@ -48,7 +33,8 @@ class MetaConstraint:
             "model": self.model, "temperature": 0,
             "response_format": {"type": "json_object"},  # UNVERIFIED structured-output parameter shape
             "messages": [{"role": "system", "content": sys},
-                         {"role": "user", "content": json.dumps({"text": text, "known_labels": known_labels})}]})
+                         {"role": "user", "content": json.dumps({"text": text, "known_labels": known_labels})}]},
+            purpose="constraint_interpreter", prompt_version=PROMPT_VERSIONS["constraint_interpreter"])
         try:
             spec = ConstraintSpec.model_validate_json(data["choices"][0]["message"]["content"])
         except Exception as e:
@@ -74,7 +60,8 @@ class MetaPerception:
             "model": "muse-spark-1.3", "temperature": 0,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": q},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(image_bgr)}}]}]})
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(image_bgr)}}]}]},
+            purpose="perceiver_labels", prompt_version=PROMPT_VERSIONS["perceiver_labels"])
         try:
             meta = json.loads(d["choices"][0]["message"]["content"])
             labels, corners, check = meta["labels"], meta["board_corners_px"], meta["check_points_px"]
@@ -83,8 +70,8 @@ class MetaPerception:
         objs = []
         for lab in labels:
             # Step 2 (SAM 3.1): prompted segmentation. Route and mask encoding UNVERIFIED.
-            r = self.c.post("/images/segmentations", {"model": "sam-3.1", "prompt": lab,
-                            "image": _png_b64(image_bgr)})
+            r = self.c.post("/images/segmentations", {"model": "sam-3.1", "prompt": lab, "image": _png_b64(image_bgr)},
+                            purpose="sam_segment", prompt_version=PROMPT_VERSIONS["sam_segment"])
             try:
                 for item in r["masks"]:
                     raw = np.frombuffer(base64.b64decode(item["mask_png_b64"]), np.uint8)
@@ -156,5 +143,6 @@ class MetaPlanner:
         data = self.c.post("/chat/completions", {
             "model": self.model, "temperature": 0, "tool_choice": "auto",
             "messages": _to_wire(messages),
-            "tools": [{"type": "function", "function": t} for t in tools]})
+            "tools": [{"type": "function", "function": t} for t in tools]},
+            purpose="planner_agent", prompt_version=PROMPT_VERSIONS["planner_agent"])
         return _from_wire(data, self.model)

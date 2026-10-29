@@ -34,10 +34,12 @@ table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--li
     <div class="stage"><img id="photo" alt="overhead photo"><svg id="ov"></svg></div></div>
 </section>
 <section>
+  <div class="card"><h2>Planner agent</h2><div id="agent">-</div></div>
   <div class="card"><h2>Route</h2><div id="route">-</div></div>
   <div class="card"><h2>Move list</h2><div id="moves">-</div></div>
   <div class="card"><h2>Recapture verdict</h2><div id="verdict">-</div></div>
-  <div class="card"><h2>Agent trace</h2><div id="trace">-</div></div>
+  <div class="card"><h2>Recovery</h2><div id="recovery">-</div></div>
+  <div class="card"><h2>Agent trace</h2><div id="totals" class="small"></div><div id="trace">-</div></div>
 </section>
 </main>
 <script>
@@ -68,13 +70,23 @@ function render(){
   $("moves").innerHTML=!p?"-":`${pill(p.status)} <span class="small">${esc(p.message)}</span><table><tr><th>object</th><th>from (cm)</th><th>to (cm)</th><th>move</th></tr>`+
     p.moves.map(m=>`<tr><td>${esc(m.id)}</td><td>${m.from_cm}</td><td>${m.to_cm}</td><td>${m.displacement_cm} cm</td></tr>`).join("")+`</table>
     <div class="small">candidate set: grid ${p.candidate_set.grid_step_cm} cm, max ${p.candidate_set.max_moves} moves, evaluated ${JSON.stringify(p.evaluated)}. Minimal only within this set.</div>`;
+  const a=run.agent,r=run.recovery;
+  $("agent").innerHTML=!a?"-":`<b>${esc(a.status)}</b> ${a.steps_used!=null?`<span class="small">steps ${a.steps_used}/${a.steps_cap}, model calls ${a.model_calls_used}/${a.model_calls_cap}</span>`:""}${a.reason?`<div class="small">${esc(a.reason)}</div>`:""}${a.note?`<div class="small">agent note (model text, unverified): ${esc(a.note)}</div>`:""}`
+    +(run.status=="needs_input"?`<div><b>${esc(a.pending_question)}</b><br><input id="ans" style="width:70%"> <button id="bans">Answer</button></div>`:"")
+    +(run.error&&run.status!="failed"?`<div class="small">${esc(run.error)}</div>`:"")
+    +(run.issues&&run.issues.length?`<div class="small">perception issues: ${run.issues.map(i=>esc(i.detail)).join("; ")}</div>`:"");
+  if($("bans"))$("bans").onclick=async()=>{try{run=await J(await fetch(`/api/runs/${run.id}/answer`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({answer:$("ans").value})}));render();await trace();msg("Answer sent.")}catch(e){msg("Error: "+e.message)}};
+  $("recovery").innerHTML=!r?"-":`<b>${esc(r.status)}</b><div>${esc(r.instruction||r.message||"")}</div><div class="small">recovery agent ${esc(r.agent.status)}, steps ${r.agent.steps_used}/${r.agent.steps_cap}. Re-planned from the observed layout; the route claim comes from the deterministic check, not the model.</div>`;
+  $("b2").disabled=run.status!="needs_confirmation";["b3","b4","b5"].forEach(i=>$(i).disabled=run.status!="awaiting_recapture");
   const v=run.verification;
   $("verdict").innerHTML=!v?"-":`${pill(v.verdict)}<table><tr><th>object</th><th>result</th><th>off by</th></tr>`+
     v.objects.map(o=>`<tr><td>${esc(o.id)}</td><td>${esc(o.kind)}</td><td>${o.deviation_cm} cm</td></tr>`).join("")+`</table>`+
     (v.problems.length?`<div class="small">${v.problems.map(esc).join("<br>")}</div>`:"")+`<div class="small">${esc(v.scope)}</div>`;
 }
-async function trace(){const t=await J(await fetch(`/api/runs/${run.id}/trace`));
-  $("trace").innerHTML=`<table><tr><th>#</th><th>agent</th><th>model</th><th>ms</th><th>output</th></tr>`+t.steps.map(s=>`<tr><td>${s.n}</td><td title="${esc(s.role)}">${esc(s.agent)}</td><td>${esc(s.model)}</td><td>${s.duration_ms}</td><td>${s.status=="ok"?"":"<b>ERR </b>"}${esc(s.output_summary)}</td></tr>`).join("")+`</table>`}
+const n0=v=>v==null?"n/a":v;
+async function trace(){const t=await J(await fetch(`/api/runs/${run.id}/trace`));const o=t.totals;
+  $("totals").innerHTML=`${o.agent_model_turns} agent model turns, ${o.agent_tool_calls} tool calls (${o.tool_errors} errors); ${o.api_calls} API calls, ${o.retries} retries; tokens in/out ${n0(o.input_tokens)}/${n0(o.output_tokens)}; API latency ${o.api_latency_ms} ms, wall ${o.wall_ms} ms; est. cost $${o.cost_usd_est} <b>${o.prices_verified?"":"(UNVERIFIED placeholder prices)"}</b>`;
+  $("trace").innerHTML=`<table><tr><th>#</th><th>agent</th><th>model / prompt</th><th>ms</th><th>tok in/out</th><th>$</th><th>output</th></tr>`+t.steps.map(s=>`<tr><td>${s.n}</td><td title="${esc(s.role)}">${esc(s.agent)}<div class="small">${esc(s.role)}</div></td><td>${esc(s.model)}${s.prompt_version?`<div class="small">${esc(s.prompt_version)}</div>`:""}</td><td>${s.duration_ms}${s.api_calls?`<div class="small">api ${s.latency_ms}${s.retries?`, ${s.retries} retry`:""}</div>`:""}</td><td>${n0(s.input_tokens)}/${n0(s.output_tokens)}</td><td>${s.cost_usd_est==null?"-":s.cost_usd_est}</td><td>${s.status=="ok"?"":`<b>${s.status=="tool_error"?"TOOL ERR":"ERR"} </b>`}${esc(s.output_summary)}</td></tr>`).join("")+`</table>`}
 async function refresh(){run=await J(await fetch(`/api/runs/${run.id}`));render();await trace()}
 async function img(n){return (await fetch(`/api/demo/${n}.png`)).blob()}
 const msg=t=>$("msg").textContent=t;
@@ -86,7 +98,7 @@ $("b1").onclick=async()=>{try{msg("running...");const f=new FormData();f.append(
 $("b2").onclick=async()=>{try{run=await J(await fetch(`/api/runs/${run.id}/confirm`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}));
   render();await trace();["b3","b4","b5"].forEach(i=>$(i).disabled=run.status!="awaiting_recapture");msg("Plan ready. Move the object, then recapture.")}catch(e){msg("Error: "+e.message)}};
 function recap(btn,name){$(btn).onclick=async()=>{try{const f=new FormData();f.append("photo",await img(name),name+".png");
-  await J(await fetch(`/api/runs/${run.id}/recapture`,{method:"POST",body:f}));cur=name;$("photo").src=`/api/demo/${name}.png`;await refresh();msg("Verified from recapture.")}catch(e){msg("Error: "+e.message)}}}
+  await J(await fetch(`/api/runs/${run.id}/recapture`,{method:"POST",body:f}));cur=name;$("photo").src=`/api/demo/${name}.png`;await refresh();msg(run.recovery?"Verifier found a wrong move; the agent proposed a corrective instruction.":"Verified from recapture.")}catch(e){msg("Error: "+e.message)}}}
 recap("b3","correct");recap("b4","wrong");recap("b5","wrong_open");
 (async()=>{try{const h=await J(await fetch("/api/health"));$("health").textContent=`Perception: ${h.perception} | Constraints: ${h.constraints}${h.mock?" (MOCK providers: plumbing only, no model evidence)":""}`;
   demo=await J(await fetch("/api/demo"));$("constraint").textContent="Constraint: "+demo.constraint_text+" (synthetic demo scene)"}catch(e){msg("Error: "+e.message)}})();
