@@ -19,7 +19,7 @@ def test_mock_run_has_step_telemetry_and_zero_cost(demo_dir):
                 "retries", "kind"} <= set(s) for s in t["steps"])
     tot = t["totals"]
     assert tot["agent_model_turns"] == 5 and tot["agent_tool_calls"] == 5 and tot["api_calls"] == 0
-    assert tot["input_tokens"] is None and tot["cost_usd_est"] == 0.0 and tot["prices_verified"] is False
+    assert tot["input_tokens"] is None and tot["cost_usd_est"] == 0.0 and tot["prices_verified"] is True
     assert t["agent"]["steps_used"] == 5 and t["agent"]["steps_cap"] == 8
 
 
@@ -45,7 +45,7 @@ def test_tokens_are_none_when_the_api_returns_no_usage(use_providers, demo_dir):
 
 
 def test_cost_estimate_uses_price_table_and_env_override(monkeypatch):
-    assert estimate_cost("muse-spark-1.3", 1_000_000, 1_000_000) == 4.0  # placeholder prices, UNVERIFIED
+    assert estimate_cost("muse-spark-1.3", 1_000_000, 1_000_000) == 5.5  # published 1.25 + 4.25 USD per M tokens
     assert estimate_cost("unknown-model", 10, 10) is None
     monkeypatch.setenv("PRICE_TABLE_JSON", json.dumps({"m": {"input_per_mtok": 2, "output_per_mtok": 4}}))
     assert estimate_cost("m", 500_000, 250_000) == 2.0

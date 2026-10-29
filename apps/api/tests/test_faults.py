@@ -112,7 +112,7 @@ def test_planner_outage_degrades_to_human_confirmation_not_a_crash(use_providers
 
 
 def test_perception_outage_fails_the_run_clearly(use_providers, demo_dir):
-    fm = FakeMeta(hook=lambda p, b, n: httpx.ReadTimeout("t") if p.endswith("segmentations") else None)
+    fm = FakeMeta(hook=lambda p, b, n: httpx.ReadTimeout("t") if p.endswith("responses") else None)
     use_providers(fm.providers())
     with pytest.raises(pipeline.PipelineError) as e:
         start()
@@ -154,7 +154,7 @@ def test_malformed_response_structure_is_treated_as_model_unavailable(use_provid
 
 def test_perception_json_gets_one_repair_attempt(use_providers, demo_dir):
     def hook(path, body, n):
-        if "tools" not in body and not path.endswith("segmentations") and n == 1:
+        if "tools" not in body and not path.endswith("responses") and n == 1:
             return httpx.Response(200, json={"choices": [{"message": {"content": "here you go: labels..."}}]})
     fm = FakeMeta(hook=hook)
     use_providers(fm.providers())
@@ -162,7 +162,7 @@ def test_perception_json_gets_one_repair_attempt(use_providers, demo_dir):
     label_calls = [b for p, b in fm.requests if p.endswith("completions") and "tools" not in b]
     assert len(label_calls) == 2 and label_calls[1]["messages"][-1]["role"] == "user"
     fm2 = FakeMeta(hook=lambda p, b, n: httpx.Response(200, json={"choices": [{"message": {"content": "no"}}]})
-                   if "tools" not in b and not p.endswith("segmentations") else None)
+                   if "tools" not in b and not p.endswith("responses") else None)
     use_providers(fm2.providers())
     with pytest.raises(pipeline.PipelineError) as e:
         start()

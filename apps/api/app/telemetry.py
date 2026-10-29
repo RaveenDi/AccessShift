@@ -2,7 +2,7 @@
 
 HTTP-level calls made inside a `step(...)` block are collected through a context variable, so providers do not
 need to know about the trace. Token counts are None when the API did not return usage. Prices come from
-config.price_table() and are UNVERIFIED placeholders unless the owner overrides them.
+config.price_table() (published Standard rates, verified 2026-10-30) unless the owner overrides them.
 """
 from __future__ import annotations
 
@@ -116,6 +116,6 @@ def totals(trace: list[dict]) -> dict:
             "wall_ms": round(sum(r.get("duration_ms", 0.0) for r in trace), 1),
             "cost_usd_est": round(cost, 6) if cost is not None else 0.0,
             "prices_verified": config.PRICES_VERIFIED,
-            "cost_basis": ("UNVERIFIED placeholder prices (config.PRICE_TABLE_DEFAULT) unless PRICE_TABLE_JSON "
-                           "is set; 0 when no billed call was made"),
-            "tokens_note": "None = the API did not return usage (mock mode, or the field shape is UNVERIFIED)"}
+            "cost_basis": ("published Standard prices (config.PRICE_TABLE_DEFAULT, verified 2026-10-30) unless "
+                           "PRICE_TABLE_JSON is set; 0 when no billed call was made; cached-input discount not modelled"),
+            "tokens_note": "None = no token usage (mock mode, or a SAM call, which is billed per image)"}

@@ -1,6 +1,6 @@
 """Runtime configuration read from the environment (never from files that hold secrets).
 
-Every number marked UNVERIFIED is a placeholder to be replaced from the real Meta pricing/limits pages.
+Prices below are the published Standard-mode rates (verified 2026-10-30, https://dev.meta.ai/docs/pricing-rate-limits).
 """
 from __future__ import annotations
 
@@ -20,13 +20,26 @@ PROMPT_VERSIONS = {
     "constraint_interpreter": "ci-1",
 }
 
-# UNVERIFIED placeholder prices in USD. They exist so the cost plumbing can be exercised; they are NOT Meta's
-# prices. Override with PRICE_TABLE_JSON='{"muse-spark-1.3": {"input_per_mtok": .., "output_per_mtok": ..}}'.
+# Published Standard-mode prices in USD (cached input $0.15/M is not modelled: cost is a slight over-estimate).
+# SAM 3.1 is billed per image ($2.50 per 1,000), one image per request here. Never use a "-contributor" model:
+# it is cheaper because it trains on your data. Override with PRICE_TABLE_JSON if Meta changes the rates.
 PRICE_TABLE_DEFAULT = {
-    "muse-spark-1.3": {"input_per_mtok": 1.0, "output_per_mtok": 3.0},
-    "sam-3.1": {"per_call": 0.005},
+    "muse-spark-1.3": {"input_per_mtok": 1.25, "output_per_mtok": 4.25},
+    "sam-3.1": {"per_call": 0.0025},
 }
-PRICES_VERIFIED = False
+PRICES_VERIFIED = True
+
+# Output cap for every chat request (reasoning tokens count against it). Muse Spark always reasons: "none" is HTTP 400.
+def max_completion_tokens() -> int:
+    return _num("META_MAX_COMPLETION_TOKENS", 2048)
+
+
+def reasoning_effort() -> str | None:
+    """META_REASONING_EFFORT = minimal|low|medium|high|xhigh (unset = the API default). Lower is cheaper and faster."""
+    v = os.environ.get("META_REASONING_EFFORT", "").strip().lower()
+    if v and v not in ("minimal", "low", "medium", "high", "xhigh"):
+        raise RuntimeError("META_REASONING_EFFORT must be minimal, low, medium, high or xhigh")
+    return v or None
 
 
 def _num(name: str, default, cast=int):

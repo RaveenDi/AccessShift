@@ -1,0 +1,80 @@
+{
+ "source": "live call to POST https://api.meta.ai/v1/responses on 2026-10-30, synthetic input only (SAM 3.1, mask_encoding one_bit)",
+ "latency_ms": 4156,
+ "request": {
+  "model": "sam-3.1",
+  "metadata": {
+   "include_confidence": "true",
+   "mask_encoding": "one_bit"
+  },
+  "input": [
+   {
+    "type": "message",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "orange rectangle"
+     },
+     {
+      "type": "input_image",
+      "image_url": "data:image/png;sha256:dcd82cd7978a2fc18ec3916d6dcf2b9c743d3340ed96accf37bf843c5c61fc2b"
+     }
+    ]
+   }
+  ]
+ },
+ "response": {
+  "metadata": {
+   "mask_encoding": "one_bit",
+   "include_confidence": "true"
+  },
+  "top_logprobs": 0,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "service_tier": "auto",
+  "model": "sam-3.1",
+  "background": false,
+  "tools": [],
+  "tool_choice": "auto",
+  "truncation": "disabled",
+  "id": "resp_6ae3923d4c89c20d245b4f63",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793299004.0,
+  "completed_at": 1793299005.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+   {
+    "type": "message",
+    "id": "msg_c616f5e7-e2dc-4659-82af-b27b4880f36a",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "<0f>0<|box;x1=894;y1=181;x2=1077;y2=292;w=1200;h=900;c=0.7730495929718018|><|mask;x=0;y=0;c=0.7730495929718018;data=112,184,!!!!!CK+HQ'I-AAAdf$33+Imm%O23fJMa[8qjz2wz!!|>,1<|box;x1=576;y1=388;x2=710;y2=520;w=1200;h=900;c=0.6289855241775513|><|mask;x=0;y=0;c=0.6289855241775513;data=133,135,!!!!!FK.1GCmin8aSIG'v-svK1V'@G=1wVtU?:osh+:v7h|>\n",
+      "annotations": [],
+      "logprobs": []
+     }
+    ],
+    "status": "completed"
+   }
+  ],
+  "instructions": null,
+  "usage": {
+   "input_tokens": 0,
+   "input_tokens_details": {
+    "cached_tokens": 0
+   },
+   "output_tokens": 0,
+   "output_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "total_tokens": 0,
+   "images_processed": 1
+  },
+  "parallel_tool_calls": true,
+  "store": true
+ }
+}

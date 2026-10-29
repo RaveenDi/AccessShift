@@ -76,7 +76,7 @@ class ModelTurn:
 class PlannerProvider(Protocol):
     """One model turn of the tool-calling loop. Messages and tool specs use a neutral shape
     ({"role", "content", "tool_calls": [{"id","name","arguments": dict}], "tool_call_id"}); the wire format
-    (OpenAI-style `tools` / `tool_calls`, UNVERIFIED for Meta) lives only inside the provider."""
+    (OpenAI-style `tools` / `tool_calls`, verified live for Meta on 2026-10-30) lives only inside the provider."""
     name: str
     model: str
 

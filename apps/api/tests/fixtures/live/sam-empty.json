@@ -1,0 +1,80 @@
+{
+ "source": "live call to POST https://api.meta.ai/v1/responses on 2026-10-30, synthetic input only (SAM 3.1, noun phrase with no match)",
+ "latency_ms": 3937,
+ "request": {
+  "model": "sam-3.1",
+  "metadata": {
+   "include_confidence": "true",
+   "mask_encoding": "one_bit"
+  },
+  "input": [
+   {
+    "type": "message",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "giraffe"
+     },
+     {
+      "type": "input_image",
+      "image_url": "data:image/png;sha256:dcd82cd7978a2fc18ec3916d6dcf2b9c743d3340ed96accf37bf843c5c61fc2b"
+     }
+    ]
+   }
+  ]
+ },
+ "response": {
+  "metadata": {
+   "mask_encoding": "one_bit",
+   "include_confidence": "true"
+  },
+  "top_logprobs": 0,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "service_tier": "auto",
+  "model": "sam-3.1",
+  "background": false,
+  "tools": [],
+  "tool_choice": "auto",
+  "truncation": "disabled",
+  "id": "resp_6ae39304fbce5b8f8c8f4257",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793299203.0,
+  "completed_at": 1793299204.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+   {
+    "type": "message",
+    "id": "msg_102b31d0-76c9-4e5b-a927-f919f0fb911d",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "",
+      "annotations": [],
+      "logprobs": []
+     }
+    ],
+    "status": "completed"
+   }
+  ],
+  "instructions": null,
+  "usage": {
+   "input_tokens": 0,
+   "input_tokens_details": {
+    "cached_tokens": 0
+   },
+   "output_tokens": 0,
+   "output_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "total_tokens": 0,
+   "images_processed": 1
+  },
+  "parallel_tool_calls": true,
+  "store": true
+ }
+}

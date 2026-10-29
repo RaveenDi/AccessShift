@@ -4,8 +4,9 @@ Policy (config.http_policy): timeouts, HTTP 429 and 5xx are retried at most `max
 exponential backoff; a Retry-After header (seconds or HTTP date) is honoured, and a Retry-After longer than
 `retry_after_max_s` is not waited out (fail fast, clearly). Other 4xx and non-JSON bodies are not retried.
 
-UNVERIFIED: the `usage` field names (prompt_tokens / completion_tokens) follow the OpenAI-compatible surface
-assumed in the planning docs. If the API omits them, token counts stay None and cost is reported as unknown.
+VERIFIED 2026-10-30: chat completions return usage.prompt_tokens / completion_tokens (+ nested *_details). The
+Responses route used by SAM returns usage with input_tokens=0 and images_processed instead, so SAM calls have no
+token counts and are costed per call (config.PRICE_TABLE_DEFAULT["sam-3.1"]).
 """
 from __future__ import annotations
 
