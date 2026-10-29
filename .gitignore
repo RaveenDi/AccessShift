@@ -7,3 +7,9 @@ evals/probes/private/
 .pytest_cache/
 *.pyc
 apps/api/demo_data/
+# recorded Meta API traffic (model output; may reflect your photos). Force-add a reviewed file only on purpose.
+apps/api/demo_data/recordings/
+evals/recordings/
+# eval reports: `git add -f` a report you want to keep as evidence
+evals/reports/*
+!evals/reports/.gitkeep

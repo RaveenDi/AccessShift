@@ -2,17 +2,39 @@ import os
 
 from dotenv import load_dotenv
 
+from ..config import record_enabled, recordings_dir
 from .mock import MockConstraint, MockPerception
+
+MODES = ("mock", "meta", "replay")
+
+
+def provider_mode() -> str:
+    """MODEL_PROVIDER=mock|meta|replay; defaults to meta when MODEL_API_KEY is set, else mock."""
+    load_dotenv()
+    key = os.environ.get("MODEL_API_KEY", "").strip()
+    want = os.environ.get("MODEL_PROVIDER", "meta" if key else "mock").strip().lower()
+    if want not in MODES:
+        raise RuntimeError(f"MODEL_PROVIDER must be one of {MODES}, got {want!r}")
+    return want
 
 
 def get_providers():
-    """MODEL_PROVIDER=mock|meta; defaults to mock when MODEL_API_KEY is absent. Key is never logged."""
-    load_dotenv()
+    """Returns (perception, constraint). The key is read only from the environment and never logged.
+    meta   : live Meta calls; every successful request/response pair is recorded under RECORDINGS_DIR.
+    replay : answers from those recordings, no key and no network; a missing recording raises ReplayMissError."""
+    mode = provider_mode()
+    if mode == "mock":
+        return MockPerception(), MockConstraint()
+    from .meta import MetaConstraint, MetaPerception
+    if mode == "replay":
+        from .recording import ReplayTransport
+        t = ReplayTransport(recordings_dir())
+        return MetaPerception("replay-no-key", t), MetaConstraint("replay-no-key", t)
     key = os.environ.get("MODEL_API_KEY", "").strip()
-    want = os.environ.get("MODEL_PROVIDER", "meta" if key else "mock").lower()
-    if want == "meta":
-        if not key:
-            raise RuntimeError("MODEL_PROVIDER=meta needs MODEL_API_KEY")
-        from .meta import MetaConstraint, MetaPerception
-        return MetaPerception(key), MetaConstraint(key)
-    return MockPerception(), MockConstraint()
+    if not key:
+        raise RuntimeError("MODEL_PROVIDER=meta needs MODEL_API_KEY")
+    t = None
+    if record_enabled():
+        from .recording import live_transport
+        t = live_transport(recordings_dir())
+    return MetaPerception(key, t), MetaConstraint(key, t)
