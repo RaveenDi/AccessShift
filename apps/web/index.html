@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AccessShift</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1b1b1b;--card:#fff;--line:#d8d5cc;--ok:#1a7f37;--bad:#c62828;--warn:#b26a00;--acc:#2456d6}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--card:#222;--line:#444;--acc:#7aa2ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:16px;display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:0 0 8px}
+button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:7px 12px;margin:2px 4px 2px 0;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+.stage{position:relative}.stage img{width:100%;display:block;border-radius:6px}
+.stage svg{position:absolute;inset:0;width:100%;height:100%}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;color:#fff;font-weight:600}
+.open,.verified_open{background:var(--ok)}.blocked,.route_still_blocked{background:var(--bad)}
+.borderline,.route_open_but_deviates_from_plan,.route_borderline,.needs_remeasurement{background:var(--warn)}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--line);padding:3px 6px;text-align:left;font-size:12px}
+.small{font-size:12px;opacity:.8}
+</style></head><body>
+<main>
+<section>
+  <h1>AccessShift <span class="small">calibrated tabletop model only, not accessibility compliance</span></h1>
+  <div class="card"><div id="health" class="small"></div>
+    <div id="constraint" class="small"></div>
+    <button id="b1">1. Load demo (blocked layout)</button>
+    <button id="b2" disabled>2. Confirm footprints + plan</button>
+    <button id="b3" disabled>3a. Recapture: correct move</button>
+    <button id="b4" disabled>3b. Recapture: wrong move</button>
+    <button id="b5" disabled>3c. Recapture: other place</button>
+    <div id="msg" class="small"></div></div>
+  <div class="card"><h2 id="phototitle">Photo</h2>
+    <div class="stage"><img id="photo" alt="overhead photo"><svg id="ov"></svg></div></div>
+</section>
+<section>
+  <div class="card"><h2>Route</h2><div id="route">-</div></div>
+  <div class="card"><h2>Move list</h2><div id="moves">-</div></div>
+  <div class="card"><h2>Recapture verdict</h2><div id="verdict">-</div></div>
+  <div class="card"><h2>Agent trace</h2><div id="trace">-</div></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);let demo,run,cur="blocked";
+const pill=(t)=>`<span class="pill ${t}">${t.replaceAll("_"," ")}</span>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function J(r){const j=await r.json();if(!r.ok)throw new Error(j.error||j.detail||r.status);return j}
+const poly=(pts,c,f,w=2)=>`<polygon points="${pts.map(p=>p.join(",")).join(" ")}" fill="${f}" stroke="${c}" stroke-width="${w}"/>`;
+function draw(img,fps,route,plan,viewW,viewH){
+  let s=`<svg>`;fps.forEach(f=>{s+=poly(f.polygon_px,f.locked?"#c62828":"#2456d6","rgba(0,0,0,0.05)");
+    const c=f.polygon_px[0];s+=`<text x="${c[0]}" y="${c[1]+14}" fill="#000" font-size="14" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(f.id)}${f.locked?" (locked)":""}</text>`});
+  if(route&&route.witness_px)s+=`<polyline points="${route.witness_px.map(p=>p.join(",")).join(" ")}" fill="none" stroke="${route.status=="open"?"#1a7f37":"#b26a00"}" stroke-width="5" stroke-dasharray="10 6"/>`;
+  return s}
+function render(){
+  if(!run)return;const W=1200,H=900;
+  const showRecap=cur!="blocked"&&run.observed.length;
+  const fps=showRecap?run.observed:run.footprints;
+  let route=showRecap&&run.verification?run.verification.route:run.route_initial;
+  let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  fps.forEach(f=>{s+=poly(f.polygon_px,f.locked?"#c62828":"#2456d6","rgba(255,255,255,0.15)",3);
+    const c=f.polygon_px[0];s+=`<text x="${c[0]+4}" y="${c[1]+18}" font-size="18" fill="#000" stroke="#fff" stroke-width="4" paint-order="stroke">${esc(f.id)}${f.locked?" \u{1F512}":""}</text>`});
+  if(route&&route.witness_px)s+=`<polyline points="${route.witness_px.map(p=>p.join(",")).join(" ")}" fill="none" stroke="${route.status=="open"?"#1a7f37":"#b26a00"}" stroke-width="6" stroke-dasharray="14 8"/>`;
+  $("ov").setAttribute("viewBox",`0 0 ${W} ${H}`);$("ov").innerHTML=s.replace(/^<svg[^>]*>/,"");
+  $("phototitle").textContent=showRecap?`Recapture photo (${cur}) with observed footprints`:"Initial photo with measured footprints (red = locked)";
+  $("route").innerHTML=(route?pill(route.status)+` clearance ${route.clearance_cm} cm, margin ${route.margin_cm} cm`+(route.witness_min_gap_cm!=null?`, witness min gap ${route.witness_min_gap_cm} cm`:""):"-")
+    +(run.calibration?`<div class="small">calibration check error ${run.calibration.check_error_pct}% , scale ratio ${run.calibration.scale_ratio}</div>`:"");
+  const p=run.plan;
+  $("moves").innerHTML=!p?"-":`${pill(p.status)} <span class="small">${esc(p.message)}</span><table><tr><th>object</th><th>from (cm)</th><th>to (cm)</th><th>move</th></tr>`+
+    p.moves.map(m=>`<tr><td>${esc(m.id)}</td><td>${m.from_cm}</td><td>${m.to_cm}</td><td>${m.displacement_cm} cm</td></tr>`).join("")+`</table>
+    <div class="small">candidate set: grid ${p.candidate_set.grid_step_cm} cm, max ${p.candidate_set.max_moves} moves, evaluated ${JSON.stringify(p.evaluated)}. Minimal only within this set.</div>`;
+  const v=run.verification;
+  $("verdict").innerHTML=!v?"-":`${pill(v.verdict)}<table><tr><th>object</th><th>result</th><th>off by</th></tr>`+
+    v.objects.map(o=>`<tr><td>${esc(o.id)}</td><td>${esc(o.kind)}</td><td>${o.deviation_cm} cm</td></tr>`).join("")+`</table>`+
+    (v.problems.length?`<div class="small">${v.problems.map(esc).join("<br>")}</div>`:"")+`<div class="small">${esc(v.scope)}</div>`;
+}
+async function trace(){const t=await J(await fetch(`/api/runs/${run.id}/trace`));
+  $("trace").innerHTML=`<table><tr><th>#</th><th>agent</th><th>model</th><th>ms</th><th>output</th></tr>`+t.steps.map(s=>`<tr><td>${s.n}</td><td title="${esc(s.role)}">${esc(s.agent)}</td><td>${esc(s.model)}</td><td>${s.duration_ms}</td><td>${s.status=="ok"?"":"<b>ERR </b>"}${esc(s.output_summary)}</td></tr>`).join("")+`</table>`}
+async function refresh(){run=await J(await fetch(`/api/runs/${run.id}`));render();await trace()}
+async function img(n){return (await fetch(`/api/demo/${n}.png`)).blob()}
+const msg=t=>$("msg").textContent=t;
+$("b1").onclick=async()=>{try{msg("running...");const f=new FormData();f.append("photo",await img("blocked"),"blocked.png");
+  f.append("board_w_cm",demo.board_w_cm);f.append("board_h_cm",demo.board_h_cm);f.append("check_len_cm",demo.check_len_cm);
+  f.append("constraint_text",demo.constraint_text);f.append("anchors",JSON.stringify(demo.anchors));
+  run=await J(await fetch("/api/runs",{method:"POST",body:f}));cur="blocked";$("photo").src=`/api/runs/${run.id}/photo/initial`;
+  render();await trace();["b2"].forEach(i=>$(i).disabled=false);["b3","b4","b5"].forEach(i=>$(i).disabled=true);msg("Footprints measured. Review locks, then confirm.")}catch(e){msg("Error: "+e.message)}};
+$("b2").onclick=async()=>{try{run=await J(await fetch(`/api/runs/${run.id}/confirm`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}));
+  render();await trace();["b3","b4","b5"].forEach(i=>$(i).disabled=run.status!="awaiting_recapture");msg("Plan ready. Move the object, then recapture.")}catch(e){msg("Error: "+e.message)}};
+function recap(btn,name){$(btn).onclick=async()=>{try{const f=new FormData();f.append("photo",await img(name),name+".png");
+  await J(await fetch(`/api/runs/${run.id}/recapture`,{method:"POST",body:f}));cur=name;$("photo").src=`/api/demo/${name}.png`;await refresh();msg("Verified from recapture.")}catch(e){msg("Error: "+e.message)}}}
+recap("b3","correct");recap("b4","wrong");recap("b5","wrong_open");
+(async()=>{try{const h=await J(await fetch("/api/health"));$("health").textContent=`Perception: ${h.perception} | Constraints: ${h.constraints}${h.mock?" (MOCK providers: plumbing only, no model evidence)":""}`;
+  demo=await J(await fetch("/api/demo"));$("constraint").textContent="Constraint: "+demo.constraint_text+" (synthetic demo scene)"}catch(e){msg("Error: "+e.message)}})();
+</script></body></html>
