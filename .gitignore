@@ -3,3 +3,7 @@
 !.env.example
 __pycache__/
 spike/private/
+.venv/
+.pytest_cache/
+*.pyc
+apps/api/demo_data/

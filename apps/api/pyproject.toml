@@ -1,0 +1,17 @@
+[project]
+name = "accessshift-api"
+version = "0.1.0"
+description = "AccessShift tabletop rearrangement planner and verifier (calibrated tabletop model only)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi", "uvicorn", "pydantic", "numpy", "shapely", "pillow",
+  "opencv-python-headless", "httpx", "python-dotenv", "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
