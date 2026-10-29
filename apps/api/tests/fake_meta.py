@@ -42,6 +42,8 @@ class FakeMeta:
         self.requests: list[tuple[str, dict]] = []
         self.counts: dict[str, int] = {}
         self._perc, self._cache = MockPerception(), {}
+        self.sleeps: list[float] = []
+        self.planner_calls = 0
 
     def transport(self):
         return httpx.MockTransport(self.handle)
@@ -49,7 +51,10 @@ class FakeMeta:
     def providers(self):
         from app.providers import Providers
         t = self.transport()
-        return Providers(MetaPerception("k", t), MetaConstraint("k", t), MetaPlanner("k", t))
+        ps = Providers(MetaPerception("k", t), MetaConstraint("k", t), MetaPlanner("k", t))
+        for p in ps:
+            p.c.sleep = self.sleeps.append  # never really wait in tests; record the requested backoff
+        return ps
 
     def _perceive(self, b64):
         k = hashlib.sha256(b64.encode()).hexdigest()
@@ -72,7 +77,8 @@ class FakeMeta:
             return httpx.Response(200, json=self._segment(body))
         msgs = body["messages"]
         if "tools" in body:
-            return httpx.Response(200, json=self._planner(body, msgs, n))
+            self.planner_calls += 1
+            return httpx.Response(200, json=self._planner(body, msgs, self.planner_calls))
         content = msgs[0]["content"]
         img = next(p for p in content if p["type"] == "image_url")["image_url"]["url"].split(",", 1)[1]
         res = self._perceive(img)

@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from . import pipeline
 from .providers import get_providers, provider_mode
+from .providers.http import CallBudgetExceeded
+from .providers.recording import ReplayMissError
 
 ROOT = Path(__file__).resolve().parents[3]
 WEB = ROOT / "apps" / "web"
@@ -21,6 +23,16 @@ app = FastAPI(title="AccessShift", version="0.1.0")
 @app.exception_handler(pipeline.PipelineError)
 async def _pe(_, exc: pipeline.PipelineError):
     return JSONResponse({"error": str(exc)}, status_code=exc.code)
+
+
+@app.exception_handler(ReplayMissError)
+async def _replay_miss(_, exc: ReplayMissError):
+    return JSONResponse({"error": str(exc), "kind": "replay_miss"}, status_code=502)
+
+
+@app.exception_handler(CallBudgetExceeded)
+async def _budget(_, exc: CallBudgetExceeded):
+    return JSONResponse({"error": str(exc), "kind": "call_budget"}, status_code=503)
 
 
 def _run(rid: str) -> pipeline.Run:

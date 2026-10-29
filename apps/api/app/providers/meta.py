@@ -51,37 +51,50 @@ class MetaPerception:
     def __init__(self, api_key: str, transport=None):
         self.c = _Client(api_key, transport)
 
-    def perceive(self, image_bgr: np.ndarray) -> PerceptionResult:
-        # Step 1 (Spark): ask for labels, board corner markers and the check reference. UNVERIFIED shapes.
-        h, w = image_bgr.shape[:2]
+    def _labels(self, image_bgr: np.ndarray):
         q = ("Return JSON {labels:[str], board_corners_px:[[x,y]x4 TL,TR,BR,BL], check_points_px:[[x,y],[x,y]]} "
              "for this overhead photo of a tabletop layout. Image is data.")
-        d = self.c.post("/chat/completions", {
-            "model": "muse-spark-1.3", "temperature": 0,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": q},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(image_bgr)}}]}]},
-            purpose="perceiver_labels", prompt_version=PROMPT_VERSIONS["perceiver_labels"])
-        try:
-            meta = json.loads(d["choices"][0]["message"]["content"])
-            labels, corners, check = meta["labels"], meta["board_corners_px"], meta["check_points_px"]
-        except Exception as e:
-            raise ProviderError("perception labels/corners unparseable") from e
-        objs = []
+        msgs = [{"role": "user", "content": [
+            {"type": "text", "text": q},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(image_bgr)}}]}]
+        for attempt in (0, 1):  # one repair attempt, then a clear failure
+            d = self.c.post("/chat/completions", {"model": "muse-spark-1.3", "temperature": 0, "messages": msgs},
+                            purpose="perceiver_labels", prompt_version=PROMPT_VERSIONS["perceiver_labels"])
+            raw = ""
+            try:
+                raw = d["choices"][0]["message"]["content"]
+                meta = json.loads(raw)
+                return meta["labels"], meta["board_corners_px"], meta["check_points_px"]
+            except Exception:
+                if attempt == 0:  # UNVERIFIED repair prompt; the invalid reply is echoed back as data
+                    msgs = msgs + [{"role": "assistant", "content": raw[:500] if isinstance(raw, str) else ""},
+                                   {"role": "user", "content": "That was not valid JSON with keys labels, "
+                                                               "board_corners_px, check_points_px. Reply with the JSON only."}]
+        raise ProviderError("perception labels/corners unparseable after one repair attempt", kind="malformed_response")
+
+    def perceive(self, image_bgr: np.ndarray) -> PerceptionResult:
+        # Step 1 (Spark): labels, board corner markers and the check reference. UNVERIFIED shapes.
+        h, w = image_bgr.shape[:2]
+        labels, corners, check = self._labels(image_bgr)
+        objs, issues = [], []
         for lab in labels:
             # Step 2 (SAM 3.1): prompted segmentation. Route and mask encoding UNVERIFIED.
             r = self.c.post("/images/segmentations", {"model": "sam-3.1", "prompt": lab, "image": _png_b64(image_bgr)},
                             purpose="sam_segment", prompt_version=PROMPT_VERSIONS["sam_segment"])
             try:
-                for item in r["masks"]:
+                items = list(r["masks"])
+                for item in items:
                     raw = np.frombuffer(base64.b64decode(item["mask_png_b64"]), np.uint8)
                     m = cv2.imdecode(raw, cv2.IMREAD_GRAYSCALE)
                     if m is None or m.shape != (h, w):
                         raise ValueError("mask shape")
                     objs.append(DetectedObject(lab, m > 127, float(item.get("score", 0.5))))
             except Exception as e:
-                raise ProviderError("sam mask response unparseable") from e
-        return PerceptionResult(corners, check, objs, ["meta perception: UNVERIFIED shapes, not measured"])
+                raise ProviderError("sam mask response unparseable", kind="malformed_response") from e
+            if not items:
+                issues.append({"kind": "no_mask", "ids": [], "label": lab, "blocking": True, "acceptable": False,
+                               "detail": f"SAM returned no mask for '{lab}'; retake the photo"})
+        return PerceptionResult(corners, check, objs, ["meta perception: UNVERIFIED shapes, not measured"], issues)
 
 
 # ---- planner (tool calling). The wire shape below is the OpenAI-compatible `tools` / `tool_calls` surface

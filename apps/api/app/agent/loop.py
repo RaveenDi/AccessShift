@@ -96,7 +96,7 @@ def drive(st: AgentState, ctx: T.ToolContext, model, trace: list) -> AgentState:
                 turn = model.next_turn(st.messages, tools)
                 s.out(_turn_summary(turn))
         except ProviderError as e:  # retries already exhausted inside the provider
-            _stop(st, ctx, f"model_unavailable: {e}")
+            _stop(st, ctx, f"model_unavailable ({e.kind}): {e}")
             break
         st.messages.append({"role": "assistant", "content": turn.content,
                             "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments or {}}
