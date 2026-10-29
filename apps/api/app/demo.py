@@ -38,7 +38,7 @@ def render(layout: dict, seed: int = 7) -> np.ndarray:
     d.rectangle([*_p(0, 0), *_p(BOARD_W, BOARD_H)], fill=(225, 215, 190))
     d.rectangle([*_p(RULER[0], RULER[1] - 3), *_p(RULER[0] + CHECK_LEN, RULER[1] + 3)], fill=RULER_RGB)
     for fid, (x, y, w, h) in layout.items():
-        d.rectangle([*_p(x, y), *_p(x + w, y + h)], fill=PALETTE[fid])
+        d.rectangle([*_p(x, y), *_p(x + w, y + h)], fill=PALETTE[fid if fid in PALETTE else fid.rsplit('_', 1)[0]])
     for cx, cy in [(0, 0), (BOARD_W, 0), (BOARD_W, BOARD_H), (0, BOARD_H)]:
         px, py = _p(cx, cy)
         d.rectangle([px - 15, py - 15, px + 15, py + 15], fill=MARKER_RGB)
