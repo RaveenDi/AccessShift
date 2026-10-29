@@ -51,8 +51,10 @@ def test_mock_pipeline_end_to_end_correct_move(client):
     ver = _recap(client, v["id"], "correct")
     assert ver["verdict"] == "verified_open", ver
     tr = client.get(f"/api/runs/{v['id']}/trace").json()["steps"]
-    assert [s["agent"] for s in tr] == ["Perceiver", "Calibrator", "Constraint Interpreter", "Route Checker",
-                                        "Human", "Planner", "Perceiver", "Calibrator", "Verifier"]
+    assert [s["agent"] for s in tr] == ["Perceiver", "Calibrator"] + ["Planner Agent"] * 10 + [
+        "Human", "Perceiver", "Calibrator", "Verifier"]
+    assert [s["role"] for s in tr if s["agent"] == "Planner Agent" and s["kind"] == "tool_call"] == [
+        "tool:get_layout", "tool:check_route", "tool:search_moves", "tool:explain_move", "tool:finish"]
     assert all(s["status"] == "ok" and "duration_ms" in s and s["model"] for s in tr)
 
 

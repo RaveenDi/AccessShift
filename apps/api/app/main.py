@@ -5,10 +5,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import pipeline
-from .providers import get_providers
+from .providers import get_providers, provider_mode
 
 ROOT = Path(__file__).resolve().parents[3]
 WEB = ROOT / "apps" / "web"
@@ -39,9 +39,9 @@ async def _read(f: UploadFile) -> bytes:
 
 @app.get("/api/health")
 def health():
-    p, c = get_providers()
-    return {"ok": True, "perception": p.model, "constraints": c.model, "mock": p.name == "mock",
-            "scope": pipeline.SCOPE}
+    p, c, pl = get_providers()
+    return {"ok": True, "perception": p.model, "constraints": c.model, "planner": pl.model,
+            "provider": provider_mode(), "mock": p.name == "mock", "scope": pipeline.SCOPE}
 
 
 @app.post("/api/runs")
@@ -67,13 +67,30 @@ class ConfirmBody(BaseModel):
     accept_review_ids: list[str] | None = None
     grid_step_cm: float = 10.0
     time_budget_s: float = 8.0
+    # manual constraints: the human-confirmation fallback when the planner agent could not finish
+    clearance_cm: float | None = None
+    start_name: str | None = None
+    end_name: str | None = None
+    max_moves: int | None = None
 
 
 @app.post("/api/runs/{rid}/confirm")
 def confirm(rid: str, body: ConfirmBody = ConfirmBody()):
+    manual = {k: getattr(body, k) for k in ("clearance_cm", "start_name", "end_name", "max_moves")
+              if getattr(body, k) is not None}
     run = pipeline.confirm(_run(rid), body.locked_ids, body.accept_review_ids,
-                           max(body.grid_step_cm, 5.0), min(body.time_budget_s, 30.0))
+                           max(body.grid_step_cm, 5.0), min(body.time_budget_s, 30.0), manual or None)
     return pipeline.run_view(run)
+
+
+class AnswerBody(BaseModel):
+    answer: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/api/runs/{rid}/answer")
+def answer(rid: str, body: AnswerBody):
+    """Reply to the planner agent's ask_user question; the agent resumes from where it paused."""
+    return pipeline.run_view(pipeline.answer(_run(rid), body.answer))
 
 
 @app.get("/api/runs/{rid}/plan")
@@ -92,8 +109,7 @@ async def recapture(rid: str, photo: UploadFile = File(...)):
 
 @app.get("/api/runs/{rid}/trace")
 def trace(rid: str):
-    r = _run(rid)
-    return {"run_id": r.id, "status": r.status, "steps": r.trace}
+    return pipeline.trace_view(_run(rid))
 
 
 @app.get("/api/runs/{rid}/photo/{which}")

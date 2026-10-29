@@ -58,8 +58,8 @@ def record_enabled() -> bool:
 class AgentCaps:
     max_steps: int = 8  # tool invocations per agent phase
     max_model_calls: int = 8  # model turns per agent phase (repairs count)
-    recovery_max_steps: int = 5
-    recovery_max_model_calls: int = 4
+    recovery_max_steps: int = 6
+    recovery_max_model_calls: int = 6
     max_ask_user: int = 2
     repair_attempts: int = 1
     max_moves_cap: int = 3

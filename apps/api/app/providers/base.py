@@ -9,7 +9,12 @@ from pydantic import BaseModel, Field
 
 
 class ProviderError(RuntimeError):
-    pass
+    """A provider call failed. `kind` is one of: error, timeout, rate_limited, server_error, http_error,
+    malformed_response (set by the HTTP layer once retries are exhausted)."""
+
+    def __init__(self, msg: str, kind: str = "error"):
+        super().__init__(msg)
+        self.kind = kind
 
 
 @dataclass
@@ -25,6 +30,7 @@ class PerceptionResult:
     check_points_px: list  # two points of the independent known-length reference
     objects: list[DetectedObject]
     notes: list[str] = field(default_factory=list)
+    issues: list[dict] = field(default_factory=list)  # provider-detected problems, e.g. {"kind": "no_mask", ...}
 
 
 class ConstraintSpec(BaseModel):
@@ -49,3 +55,29 @@ class ConstraintProvider(Protocol):
     model: str
 
     def interpret(self, text: str, known_labels: list[str]) -> ConstraintSpec: ...
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict | None  # None when the model's arguments were not a valid JSON object
+    error: str | None = None
+
+
+@dataclass
+class ModelTurn:
+    content: str | None
+    tool_calls: list[ToolCall]
+    model: str
+    finish_reason: str | None = None
+
+
+class PlannerProvider(Protocol):
+    """One model turn of the tool-calling loop. Messages and tool specs use a neutral shape
+    ({"role", "content", "tool_calls": [{"id","name","arguments": dict}], "tool_call_id"}); the wire format
+    (OpenAI-style `tools` / `tool_calls`, UNVERIFIED for Meta) lives only inside the provider."""
+    name: str
+    model: str
+
+    def next_turn(self, messages: list[dict], tools: list[dict]) -> ModelTurn: ...

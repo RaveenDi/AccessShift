@@ -10,7 +10,7 @@ import cv2
 import httpx
 import numpy as np
 
-from .base import ConstraintSpec, DetectedObject, PerceptionResult, ProviderError
+from .base import ConstraintSpec, DetectedObject, ModelTurn, PerceptionResult, ProviderError, ToolCall
 
 BASE = "https://api.meta.ai/v1"
 
@@ -95,3 +95,66 @@ class MetaPerception:
             except Exception as e:
                 raise ProviderError("sam mask response unparseable") from e
         return PerceptionResult(corners, check, objs, ["meta perception: UNVERIFIED shapes, not measured"])
+
+
+# ---- planner (tool calling). The wire shape below is the OpenAI-compatible `tools` / `tool_calls` surface
+# assumed from the planning docs. UNVERIFIED against dev.meta.ai: nothing outside this block knows it.
+def _to_wire(messages: list[dict]) -> list[dict]:
+    out = []
+    for m in messages:
+        if m["role"] == "assistant":
+            d = {"role": "assistant", "content": m.get("content")}
+            if m.get("tool_calls"):
+                d["tool_calls"] = [{"id": c["id"], "type": "function",
+                                    "function": {"name": c["name"], "arguments": json.dumps(
+                                        c["arguments"], sort_keys=True, separators=(",", ":"))}}
+                                   for c in m["tool_calls"]]
+            out.append(d)
+        elif m["role"] == "tool":
+            out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+        else:
+            out.append({"role": m["role"], "content": m["content"]})
+    return out
+
+
+def _from_wire(data: dict, model: str) -> ModelTurn:
+    try:
+        choice = data["choices"][0]
+        msg = choice["message"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise ProviderError("planner response has no choices[0].message", kind="malformed_response") from e
+    calls = []
+    for i, tc in enumerate(msg.get("tool_calls") or []):
+        try:
+            fn = tc["function"]
+            name, raw = str(fn["name"]), fn.get("arguments")
+        except (KeyError, TypeError):
+            calls.append(ToolCall(str(tc.get("id", f"call_bad_{i}")) if isinstance(tc, dict) else f"call_bad_{i}",
+                                  "", None, "tool call has no function name"))
+            continue
+        cid = str(tc.get("id") or f"call_{i + 1}")
+        if isinstance(raw, dict):
+            args, err = raw, None
+        else:
+            try:
+                args = json.loads(raw) if raw else {}
+                err = None if isinstance(args, dict) else "arguments are not a JSON object"
+            except (ValueError, TypeError):
+                args, err = None, "arguments are not valid JSON"
+        calls.append(ToolCall(cid, name, args if err is None else None, err))
+    content = msg.get("content")
+    return ModelTurn(content if isinstance(content, str) else None, calls, model, choice.get("finish_reason"))
+
+
+class MetaPlanner:
+    name, model = "meta", "muse-spark-1.3"
+
+    def __init__(self, api_key: str, transport=None):
+        self.c = _Client(api_key, transport)
+
+    def next_turn(self, messages: list[dict], tools: list[dict]) -> ModelTurn:
+        data = self.c.post("/chat/completions", {
+            "model": self.model, "temperature": 0, "tool_choice": "auto",
+            "messages": _to_wire(messages),
+            "tools": [{"type": "function", "function": t} for t in tools]})
+        return _from_wire(data, self.model)
