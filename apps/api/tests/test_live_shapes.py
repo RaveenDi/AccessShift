@@ -2,8 +2,8 @@
 
 tests/fixtures/live/*.json are {request, response} pairs: images are replaced by their sha256, no auth header, request
 id or account id was stored. They pin the *verified* wire shapes (chat, strict json_schema, vision, tool calls, SAM 3.1
-on /v1/responses). Responses are served by a mock transport; nothing here touches the network. SAM mask payload
-decoding is NOT covered (needs Meta's optional meta-sam-parser): a stub decoder checks placement only."""
+on /v1/responses). Responses are served by a mock transport; nothing here touches the network. A stub decoder checks
+mask placement; the real payloads are decoded with Meta's meta-sam-parser (skipped if it is not installed)."""
 import importlib.util
 import json
 from pathlib import Path
@@ -192,3 +192,50 @@ def test_without_meta_sam_parser_decoding_fails_with_a_clear_kind():
     with pytest.raises(ProviderError) as e:
         MetaPerception("k", serving("sam-onebit", [])).segment(black(), "orange rectangle")
     assert e.value.kind == "mask_decoder_missing"
+
+
+# ---- real mask payloads, decoded with Meta's meta-sam-parser ----------------------------------------------------
+needs_parser = pytest.mark.skipif(importlib.util.find_spec("meta_sam_parser") is None, reason="meta-sam-parser missing")
+
+
+def crops(name):
+    recs = samlib.parse_records(samlib.response_text(fx(name)["response"]))
+    return recs, [samlib.to_full_frame_mask(r, samlib.library_decoder)[r.y1:r.y2 + 1, r.x1:r.x2 + 1] for r in recs]
+
+
+@needs_parser
+def test_recorded_one_bit_and_lossless_masks_decode_to_the_same_filled_rectangles():
+    _, one_bit = crops("sam-onebit")
+    _, lossless = crops("sam-lossless")
+    assert [c.shape for c in one_bit] == [(112, 184), (133, 135)]
+    for a, b in zip(one_bit, lossless):
+        assert a.mean() > 0.95  # the synthetic objects are solid rectangles
+        assert (a == b).mean() > 0.999
+
+
+@needs_parser
+def test_our_record_parser_agrees_with_meta_stream_parser():
+    import meta_sam_parser as msp
+    text = samlib.response_text(fx("sam-onebit")["response"])
+    parser = msp.image_segmentation_format().create_parser()
+    parser.push(text)
+    lib = [r for r in parser.finish(msp.CompletedOutcome()).result.records if isinstance(r, msp.SegmentationMaskRecord)]
+    recs, ours = crops("sam-onebit")
+    assert [int(r.object_id) for r in lib] == [r.object_id for r in recs]
+    for r, mine, theirs in zip(recs, ours, lib):
+        b = theirs.bounds
+        assert (b.left, b.top, b.right - 1, b.bottom - 1) == (r.x1, r.y1, r.x2, r.y2)
+        raster = np.frombuffer(msp.decode_mask_to_raster(theirs.mask), np.uint8).reshape(r.mask_h, r.mask_w) > 0
+        assert (raster == mine).all()
+
+
+@needs_parser
+def test_a_decoded_sam_mask_becomes_a_metric_footprint_of_the_right_size():
+    from app.domain.calibration import calibrate
+    from app.domain.footprints import footprint_from_mask
+    objs = MetaPerception("k", serving("sam-onebit", [])).segment(black(), "orange rectangle")
+    cal = calibrate([(0, 0), (1199, 0), (1199, 899), (0, 899)], 119.9, 89.9, [(100, 850), (300, 850)], 20, (1200, 900))
+    fp = footprint_from_mask(objs[0].mask, cal, "o1", "orange rectangle", confidence=objs[0].confidence)
+    x0, y0, x1, y1 = fp.polygon.bounds  # 10 px per cm; the box is 184 x 112 px
+    assert abs((x1 - x0) - 18.4) < 1.0 and abs((y1 - y0) - 11.2) < 1.0
+    assert abs(x0 - 89.4) < 1.0 and abs(y0 - 18.1) < 1.0

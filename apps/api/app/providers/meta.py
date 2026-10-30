@@ -1,6 +1,6 @@
 """Meta Model API adapters. Chat shapes (strict json_schema, vision, tools) and the SAM 3.1 route were VERIFIED
-live on 2026-10-30 with synthetic inputs (apps/api/tests/fixtures/live/). Not verified: SAM mask decoding (needs the
-optional `meta-sam-parser`, see sam.py) and answer quality on real photos."""
+live on 2026-10-30 with synthetic inputs (apps/api/tests/fixtures/live/), and so was SAM mask decoding on the recorded
+replies (Meta's `meta-sam-parser`, see sam.py). Not verified: answer quality on real photos."""
 from __future__ import annotations
 
 import base64

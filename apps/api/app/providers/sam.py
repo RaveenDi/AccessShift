@@ -1,4 +1,4 @@
-"""SAM 3.1 wire layer. VERIFIED live on 2026-10-30 (tests/fixtures/live/sam-*.json); mask decoding is NOT.
+"""SAM 3.1 wire layer. VERIFIED live on 2026-10-30 (tests/fixtures/live/sam-*.json); mask decoding VERIFIED 2026-10-30.
 
 Route   : POST /v1/responses (not a dedicated endpoint, not chat completions), model "sam-3.1".
 Request : {"model": "sam-3.1", "metadata": {"include_confidence": "true", "mask_encoding": "one_bit"},
@@ -12,9 +12,10 @@ Response: a Responses-API object; the result is TEXT in output[0].content[0].tex
           always literal zeros on the wire). No match -> output_text is the empty string (HTTP 200).
           usage has no tokens, only "images_processed" (billed $0.0025 per image).
 Payload : first char is the encoding marker ("!" one_bit, "~" lossless), then a 5-char base85 length prefix, then an
-          arithmetic-coded body. The coder is not documented, so decoding needs Meta's pure-Python `meta-sam-parser`
-          (pip install meta-sam-parser==0.1.0, SAM License). Its API below follows the package README and has NOT
-          been executed here: UNVERIFIED. Without it the provider raises ProviderError(kind="mask_decoder_missing").
+          arithmetic-coded body, decoded by Meta's pure-Python `meta-sam-parser` (0.1.0, SAM License, zero deps; named
+          on dev.meta.ai/docs/sam/client-libraries). Checked on both recorded live replies: one_bit and lossless decode
+          to the same rasters, our record parser agrees with the library's own stream parser, and the solid synthetic
+          rectangles fill 96-98% of their boxes. Without the package the provider raises kind="mask_decoder_missing".
 """
 from __future__ import annotations
 
@@ -105,7 +106,7 @@ def parse_records(text: str) -> list[SamRecord]:
 
 
 def library_decoder(payload: str, width: int, height: int) -> bytes:
-    """Default decoder: Meta's `meta-sam-parser` (follows its README; UNVERIFIED, never executed in this repo)."""
+    """Default decoder: Meta's `meta-sam-parser`. The payload keeps its marker ("!" one_bit, "~" lossless)."""
     try:
         from meta_sam_parser import SegmentationMask, decode_mask_to_raster
     except ImportError:

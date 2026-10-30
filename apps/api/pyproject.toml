@@ -5,7 +5,7 @@ description = "AccessShift tabletop rearrangement planner and verifier (calibrat
 requires-python = ">=3.12"
 dependencies = [
   "fastapi", "uvicorn", "pydantic", "numpy", "shapely", "pillow",
-  "opencv-python-headless", "httpx", "python-dotenv", "python-multipart",
+  "opencv-python-headless", "httpx", "python-dotenv", "python-multipart", "meta-sam-parser==0.1.0",
 ]
 
 [project.optional-dependencies]
