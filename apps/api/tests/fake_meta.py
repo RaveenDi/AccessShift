@@ -1,8 +1,10 @@
 """Offline stand-in for the Meta Model API used by tests (wire-format and fault-injection checks).
 
 Perception answers come from the repo's own colour-segmentation mock: Spark replies in the normalized 0-1000 object
-schema (tag names upper-case like the printed tags, boxes from the mock masks), SAM answers one box-prompt request per
-call, rendered in the verified Responses-API text format (tests/fixtures/live/sam-*.json) with a test-only mask payload; planner answers come from
+schema (tag names upper-case like the printed tags, boxes from the mock masks; `spark_edit` can make the board corners
+and check points as coarse as the real Spark's), SAM answers one box-prompt request per call (the objects, then the
+board and the check ruler), rendered in the verified Responses-API text format (tests/fixtures/live/sam-*.json) with a
+test-only mask payload; planner answers come from
 the scripted mock policy, translated to/from the verified OpenAI-style chat wire shape. It exercises plumbing
 only and says nothing about Muse Spark or SAM quality. Everything the server receives is kept in `requests`.
 """
@@ -20,7 +22,7 @@ import httpx
 import numpy as np
 
 from app.providers.meta import MetaConstraint, MetaPerception, MetaPlanner
-from app.providers.mock import MockPerception
+from app.providers.mock import RULER_RGB, MockPerception, _clean, _near
 from app.providers.mock_policy import MockPlanner
 
 
@@ -79,9 +81,18 @@ def wire_tool_call(name, args, cid="call_x", raw=None):
             "function": {"name": name, "arguments": raw if raw is not None else json.dumps(args)}}
 
 
+BOARD, RULER = "__board__", "__check_ruler__"  # candidate names of the two non-object masks (use in `sam=` to drop one)
+
+
+def _bbox(mask):
+    ys, xs = np.nonzero(mask)
+    return int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+
+
 class FakeMeta:
-    def __init__(self, hook=None, planner_script=None, sam=None, tokens=True):
+    def __init__(self, hook=None, planner_script=None, sam=None, tokens=True, spark_edit=None):
         self.hook, self.planner_script, self.sam, self.tokens = hook, planner_script, sam or {}, tokens
+        self.spark_edit = spark_edit  # (reply dict, (w, h)) -> reply dict: degrade what Spark says
         self.requests: list[tuple[str, dict]] = []
         self.counts: dict[str, int] = {}
         self._perc, self._cache = MockPerception(), {}
@@ -100,10 +111,16 @@ class FakeMeta:
         return ps
 
     def _perceive(self, b64):
+        """-> (mock PerceptionResult, (w, h), {BOARD: bool mask, RULER: bool mask}) for the photo."""
         k = hashlib.sha256(b64.encode()).hexdigest()
         if k not in self._cache:
             img = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_COLOR)
-            self._cache[k] = (self._perc.perceive(img), (img.shape[1], img.shape[0]))
+            res = self._perc.perceive(img)
+            board = np.zeros(img.shape[:2], np.uint8)  # the board: the quadrilateral through the corner markers
+            cv2.fillPoly(board, [np.round(res.board_corners_px).astype(np.int32)], 1)
+            n, lab, st, _ = cv2.connectedComponentsWithStats(_clean(_near(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), RULER_RGB, 45)))
+            ruler = lab == 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))  # the ruler: the biggest dark piece
+            self._cache[k] = (res, (img.shape[1], img.shape[0]), {BOARD: board > 0, RULER: ruler})
         return self._cache[k]
 
     def handle(self, request):
@@ -124,7 +141,10 @@ class FakeMeta:
             return httpx.Response(200, json=self._planner(body, msgs, self.planner_calls))
         content = msgs[0]["content"]
         img = next(p for p in content if p["type"] == "image_url")["image_url"]["url"].split(",", 1)[1]
-        return httpx.Response(200, json=self._chat(json.dumps(spark_reply(*self._perceive(img))), None, body))
+        res, size, _ = self._perceive(img)
+        reply = spark_reply(res, size)
+        return httpx.Response(200, json=self._chat(json.dumps(self.spark_edit(reply, size) if self.spark_edit else reply),
+                                                   None, body))
 
     def _chat(self, content, tool_calls, body):
         msg = {"role": "assistant", "content": content}
@@ -146,22 +166,34 @@ class FakeMeta:
         return self._chat(turn.content, calls, body)
 
     def _segment(self, body):
-        """Answer a box-prompt request: each prompted id gets the mock object that overlaps its box the most."""
+        """Answer a box-prompt request: each prompted id gets the mask (a mock object, the board or the check ruler) that
+        sits inside its box and overlaps it the most; no such mask -> no record for that id."""
         parts = body["input"][0]["content"]
         text = next(p for p in parts if p["type"] == "input_text")["text"]
-        res, _ = self._perceive(next(p for p in parts if p["type"] == "input_image")["image_url"].split(",", 1)[1])
+        res, _, extra = self._perceive(next(p for p in parts if p["type"] == "input_image")["image_url"].split(",", 1)[1])
+        cands = [(o.label, o.mask) for o in res.objects] + list(extra.items())
+        boxes = {name: _bbox(mask) for name, mask in cands if mask.any()}
         ids, masks = [], []
         for m in _BOX.finditer(text):
             oid, x1, y1, x2, y2 = (int(g) for g in m.groups())
-            hit = np.zeros_like(res.objects[0].mask)
-            hit[y1:y2 + 1, x1:x2 + 1] = True
-            best = max(res.objects, key=lambda o: int((o.mask & hit).sum()))
-            if not (best.mask & hit).any():
+            best, best_iou = None, 0.0
+            for i, (name, mask) in enumerate(cands):
+                if name not in boxes:
+                    continue
+                bx1, by1, bx2, by2 = boxes[name]
+                inter = max(0, min(x2, bx2) - max(x1, bx1) + 1) * max(0, min(y2, by2) - max(y1, by1) + 1)
+                area = (bx2 - bx1 + 1) * (by2 - by1 + 1)
+                if inter < 0.9 * area:  # the mask must lie inside the prompted box
+                    continue
+                iou = inter / ((x2 - x1 + 1) * (y2 - y1 + 1) + area - inter)
+                if iou > best_iou:
+                    best, best_iou = i, iou
+            if best is None:
                 continue
-            mode = self.sam.get(best.label)
+            label, mask = cands[best]
+            mode = self.sam.get(label)
             if mode == "none":
                 continue
-            mask = best.mask
             if isinstance(mode, str) and mode.startswith("merge:"):  # union with another label's masks
                 mask = np.logical_or.reduce([mask, *[o.mask for o in res.objects if o.label == mode[6:]]])
             ids.append(oid)

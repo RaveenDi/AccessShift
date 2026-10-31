@@ -10,7 +10,8 @@ Prompt  : VERIFIED live: one short noun phrase (matches nothing on a photo of ta
           box prompts for all objects, text built by Meta's `meta_sam_parser.build_object_prompt` (documented on
           dev.meta.ai/docs/sam/client-libraries): "<0f>" then "ID<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H|>" per object,
           x2/y2 inclusive (the builder takes half-open right/bottom). At most 16 objects per call (API limit); object
-          ids are 0..n-1 within a call and map back to the names Spark gave.
+          ids are 0..n-1 within a call and map back to the names Spark gave. From 2026-10-31 the board and the check
+          ruler are two more prompts in the same call, after the objects (see meta.py, domain/refine.py).
           UNVERIFIED until the tower's next live run: how the live API answers a box-prompt request (that it returns
           one record per prompted id, in the record format below, and no record for an object it cannot segment).
           Only the request text is checked offline (against the library) and the reply parsing on the recorded

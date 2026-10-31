@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 # Prompt versions are recorded on every model step so a trace says which prompt produced it.
 PROMPT_VERSIONS = {
     "perceiver_labels": "pl-2",
-    "sam_segment": "sam-2",
+    "sam_segment": "sam-3",
     "planner_agent": "pa-1",
     "planner_recovery": "pr-1",
     "constraint_interpreter": "ci-1",

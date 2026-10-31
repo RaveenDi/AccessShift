@@ -31,6 +31,8 @@ class PerceptionResult:
     objects: list[DetectedObject]
     notes: list[str] = field(default_factory=list)
     issues: list[dict] = field(default_factory=list)  # provider-detected problems, e.g. {"kind": "no_mask", ...}
+    # where the calibration inputs came from, e.g. {"board_corners": "refined", "check_points": "seed"}; empty = not tracked
+    sources: dict[str, str] = field(default_factory=dict)
 
 
 class ConstraintSpec(BaseModel):

@@ -9,7 +9,7 @@ Principle: **models perceive and interpret; deterministic code decides connectiv
 
 | Agent | Kind | Meta model (`meta` / `replay` mode) | `mock` mode (default without a key) |
 |---|---|---|---|
-| Perceiver | model | `muse-spark-1.3`: named object boxes (tag text, lowercased), 4 board corners, check reference, all on a 0-1000 normalized scale that code converts to pixels. `sam-3.1`: one box-prompted call for all objects (max 16 per call; reply format UNVERIFIED until the next live run) | OpenCV colour segmentation on the synthetic image |
+| Perceiver | model | `muse-spark-1.3`: named object boxes (tag text, lowercased), 4 board corners, check reference, all on a 0-1000 normalized scale that code converts to pixels. `sam-3.1`: one box-prompted call for all objects plus the board and the check ruler (ids after the objects; max 16 per call; reply format UNVERIFIED until the next live run). Board corners and ruler end points are then read from those two masks (`domain/refine.py`); Spark's values are only seeds and the fallback, and the trace records `refined` or `seed` for each | OpenCV colour segmentation on the synthetic image |
 | Calibrator | deterministic | none | same code |
 | Planner Agent | model + tools | `muse-spark-1.3` with tool calling; reads the constraint text, picks tools | scripted policy (`mock_policy.py`) that drives the same loop and tools |
 | Human confirm | person | none | API call |
