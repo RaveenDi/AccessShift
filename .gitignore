@@ -13,3 +13,7 @@ evals/recordings/
 # eval reports: `git add -f` a report you want to keep as evidence
 evals/reports/*
 !evals/reports/.gitkeep
+
+# Generated eval photos: commit only the base photo; scripts/make_generated.py rebuilds the gen-*.png layouts from it.
+evals/photos/generated/*.png
+!evals/photos/generated/gen-base.png
