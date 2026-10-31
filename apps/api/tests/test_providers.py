@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from app.providers import get_providers
+from app.providers import get_providers, provider_mode
 from app.providers.base import ProviderError
 from app.providers.meta import MetaConstraint
 from app.providers.mock import MockConstraint
@@ -23,6 +23,19 @@ def test_default_provider_is_mock_without_key(monkeypatch):
     monkeypatch.delenv("MODEL_PROVIDER", raising=False)
     monkeypatch.setattr("app.providers.load_dotenv", lambda: None)
     assert get_providers()[0].name == "mock"
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "	"])
+def test_blank_model_provider_is_treated_as_unset(monkeypatch, blank):
+    monkeypatch.setattr("app.providers.load_dotenv", lambda: None)
+    monkeypatch.setenv("MODEL_PROVIDER", blank)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    assert provider_mode() == "mock" and get_providers()[0].name == "mock"
+    monkeypatch.setenv("MODEL_API_KEY", "test-key-not-real")  # unset provider + a key still defaults to meta
+    assert provider_mode() == "meta"
+    monkeypatch.setenv("MODEL_PROVIDER", "bogus")  # a real typo is still rejected
+    with pytest.raises(RuntimeError):
+        provider_mode()
 
 
 def test_meta_constraint_validates_model_output_offline():

@@ -11,10 +11,11 @@ MODES = ("mock", "meta", "replay")
 
 
 def provider_mode() -> str:
-    """MODEL_PROVIDER=mock|meta|replay; defaults to meta when MODEL_API_KEY is set, else mock."""
+    """MODEL_PROVIDER=mock|meta|replay; defaults to meta when MODEL_API_KEY is set, else mock.
+    An empty or whitespace-only MODEL_PROVIDER (as in .env.example) counts as unset."""
     load_dotenv()
     key = os.environ.get("MODEL_API_KEY", "").strip()
-    want = os.environ.get("MODEL_PROVIDER", "meta" if key else "mock").strip().lower()
+    want = os.environ.get("MODEL_PROVIDER", "").strip().lower() or ("meta" if key else "mock")
     if want not in MODES:
         raise RuntimeError(f"MODEL_PROVIDER must be one of {MODES}, got {want!r}")
     return want
