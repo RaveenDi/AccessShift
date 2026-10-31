@@ -20,7 +20,9 @@ Response: a Responses-API object; the result is TEXT in output[0].content[0].tex
           one line per frame starting "<0f>", then records "ID<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H;c=C|>
           <|mask;x=0;y=0;c=C;data=H,W,PAYLOAD|>" separated by commas. Boxes are pixel corners, x2/y2 inclusive,
           w/h the frame size; the mask raster (H x W) covers exactly the box (H = y2-y1+1, W = x2-x1+1; x=0;y=0 are
-          always literal zeros on the wire). No match -> output_text is the empty string (HTTP 200).
+          always literal zeros on the wire), EXCEPT that a raster is capped at MASK_MAX_SIDE px on its long side:
+          VERIFIED live 2026-10-31, a whole-image board box of 2240x1715 came back as a 1024x784 raster (same aspect).
+          Such a raster is scaled back to its box with nearest-neighbour. No match -> output_text is "" (HTTP 200).
           usage has no tokens, only "images_processed" (billed $0.0025 per image).
 Payload : first char is the encoding marker ("!" one_bit, "~" lossless), then a 5-char base85 length prefix, then an
           arithmetic-coded body, decoded by Meta's pure-Python `meta-sam-parser` (0.1.0, SAM License, zero deps; named
@@ -35,6 +37,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Callable
 
+import cv2
 import numpy as np
 
 from .base import ProviderError
@@ -44,6 +47,7 @@ SAM_METADATA = {"include_confidence": "true", "mask_encoding": "one_bit"}
 
 _RECORD = re.compile(
     r"(?P<id>\d+)<\|box;(?P<box>[^|]*)\|><\|mask;(?P<mask>[^|]*?);data=(?P<h>\d+),(?P<w>\d+),(?P<payload>[^|<>,;]+)\|>")
+MASK_MAX_SIDE = 1024  # SAM downscales larger mask rasters so the long side is 1024 px
 MAX_RECORDS = 64  # a malformed or hostile reply must not allocate unbounded masks
 
 MAX_OBJECTS_PER_CALL = 16  # SAM API limit on box-prompted objects per request
@@ -129,7 +133,8 @@ def parse_records(text: str) -> list[SamRecord]:
         mh, mw = int(m["h"]), int(m["w"])
         if not (0 <= x1 <= x2 < w and 0 <= y1 <= y2 < h):
             raise _bad("box outside the frame")
-        if (mh, mw) != (y2 - y1 + 1, x2 - x1 + 1):
+        bh, bw = y2 - y1 + 1, x2 - x1 + 1
+        if (mh, mw) != (bh, bw) and not _downscaled(mh, mw, bh, bw):
             raise _bad("mask size does not match its box")
         out.append(SamRecord(int(m["id"]), x1, y1, x2, y2, w, h, mh, mw, m["payload"], conf))
         if len(out) > MAX_RECORDS:
@@ -137,6 +142,14 @@ def parse_records(text: str) -> list[SamRecord]:
     if not out:
         raise _bad("text has no box+mask records")
     return out
+
+
+def _downscaled(mh: int, mw: int, bh: int, bw: int) -> bool:
+    """True when (mh, mw) is the box (bh, bw) scaled down so its long side is MASK_MAX_SIDE (rounding allowed)."""
+    if max(bh, bw) <= MASK_MAX_SIDE or max(mh, mw) != MASK_MAX_SIDE:
+        return False
+    scale = MASK_MAX_SIDE / max(bh, bw)
+    return abs(mh - bh * scale) <= 1.0 and abs(mw - bw * scale) <= 1.0
 
 
 def library_decoder(payload: str, width: int, height: int) -> bytes:
@@ -160,7 +173,11 @@ def to_full_frame_mask(rec: SamRecord, decoder: Decoder) -> np.ndarray:
     raw = decoder(rec.payload, rec.mask_w, rec.mask_h)
     if len(raw) != rec.mask_h * rec.mask_w:
         raise _bad("decoded raster has the wrong size")
-    crop = np.frombuffer(raw, np.uint8).reshape(rec.mask_h, rec.mask_w) > 0
+    crop = np.frombuffer(raw, np.uint8).reshape(rec.mask_h, rec.mask_w)
+    bh, bw = rec.y2 - rec.y1 + 1, rec.x2 - rec.x1 + 1
+    if crop.shape != (bh, bw):  # a downscaled raster (see MASK_MAX_SIDE): scale it back to its box
+        crop = cv2.resize(crop, (bw, bh), interpolation=cv2.INTER_NEAREST)
+    crop = crop > 0
     full = np.zeros((rec.frame_h, rec.frame_w), bool)
     full[rec.y1:rec.y2 + 1, rec.x1:rec.x2 + 1] = crop
     return full

@@ -258,3 +258,37 @@ def test_a_decoded_sam_mask_becomes_a_metric_footprint_of_the_right_size():
     x0, y0, x1, y1 = fp.polygon.bounds  # 10 px per cm; the box is 184 x 112 px
     assert abs((x1 - x0) - 18.4) < 1.0 and abs((y1 - y0) - 11.2) < 1.0
     assert abs(x0 - 89.4) < 1.0 and abs(y0 - 18.1) < 1.0
+
+
+def test_a_downscaled_mask_raster_for_a_large_box_is_scaled_back_to_the_box():
+    # seen live 2026-10-31: the board box was 2240x1715 and its mask raster 1024x784
+    text = "<0f>6<|box;x1=0;y1=0;x2=2239;y2=1714;w=2240;h=1715;c=0.84|><|mask;x=0;y=0;c=0.84;data=784,1024,!AAAA|>"
+    (rec,) = samlib.parse_records(text)
+    assert (rec.mask_h, rec.mask_w) == (784, 1024)
+    full = samlib.to_full_frame_mask(rec, stub_decoder)
+    assert full.shape == (1715, 2240) and full.all()
+    half = samlib.to_full_frame_mask(rec, lambda p, w, h: (b"\x01" * (w // 2) + b"\x00" * (w - w // 2)) * h)
+    assert half[:, :1119].all() and not half[:, 1121:].any()  # left half of the raster -> left half of the box
+
+
+def test_a_mask_raster_with_a_different_aspect_ratio_is_still_malformed():
+    text = "<0f>6<|box;x1=0;y1=0;x2=2239;y2=1714;w=2240;h=1715|><|mask;x=0;y=0;data=784,900,!AAAA|>"
+    with pytest.raises(ProviderError):
+        samlib.parse_records(text)
+
+
+# ---- downscaled mask rasters (VERIFIED live 2026-10-31: a 2240x1715 board box came back as a 1024x784 raster) -----
+BOARD = "<0f>6<|box;x1=0;y1=0;x2=2239;y2=1714;w=2240;h=1715;c=0.84|><|mask;x=0;y=0;c=0.84;data={h},{w},!AAAAA|>"
+
+
+def test_a_raster_capped_at_1024_px_is_accepted_and_scaled_back_to_its_box():
+    rec = samlib.parse_records(BOARD.format(h=784, w=1024))[0]
+    assert (rec.mask_h, rec.mask_w) == (784, 1024)
+    full = samlib.to_full_frame_mask(rec, stub_decoder)
+    assert full.shape == (1715, 2240) and full.all()
+
+
+def test_a_raster_that_is_not_the_box_scaled_to_1024_is_still_malformed():
+    for h, w in [(784, 1000), (700, 1024), (1715, 2239)]:
+        with pytest.raises(ProviderError):
+            samlib.parse_records(BOARD.format(h=h, w=w))
