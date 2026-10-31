@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app import demo, pipeline
 from app.agent import tools as T
 from app.config import agent_caps
+from app.domain.footprints import rect_footprint
 from app.main import app
 from app.providers import Providers
 from app.providers.base import ModelTurn, ToolCall
@@ -181,3 +182,31 @@ def test_only_one_recovery_per_run(demo_dir):
     assert run.verification["verdict"] == "route_still_blocked" and run.recoveries_used == 1
     assert run.status == "needs_remeasurement"
     assert pipeline.trace_view(run)["totals"]["agent_model_turns"] == turns
+
+
+def _scene_ctx(board_w=300.0, board_h=200.0, margin_cm=1.0):
+    """A sofa blocking a door-to-desk route; anchors are plain points, so no endpoint object is locked."""
+    fps = [rect_footprint("sofa", "sofa", 130, 30, 40, 140, margin_cm=margin_cm)]
+    return T.ToolContext(fps, board_w, board_h, {"door": (10.0, 100.0), "desk": (290.0, 100.0)}, agent_caps())
+
+
+def _search(ctx, clearance=90):
+    T.execute(ctx, "check_route", {"clearance_cm": clearance, "start": "door", "end": "desk"})
+    return T.execute(ctx, "search_moves", {"max_moves": 1, "locked_ids": []})
+
+
+@pytest.mark.parametrize("other", [{"board_h": 220.0}, {"board_w": 320.0}, {"margin_cm": 6.0}],
+                         ids=["board_height", "board_width", "footprint_margin"])
+def test_plan_cache_is_not_shared_across_board_size_or_margin(monkeypatch, other):
+    monkeypatch.setattr(T, "_PLAN_CACHE", {})
+    a, b = _scene_ctx(), _scene_ctx(**other)
+    ra, rb = _search(a), _search(b)
+    assert ra["plan_id"] != rb["plan_id"]
+    assert a.plans[ra["plan_id"]] is not b.plans[rb["plan_id"]] and len(T._PLAN_CACHE) == 2
+    # the same inputs still hit the cache (same plan object, same id)
+    c = _scene_ctx(**other)
+    rc = _search(c)
+    assert rc["plan_id"] == rb["plan_id"] and c.plans[rc["plan_id"]] is b.plans[rb["plan_id"]]
+    assert len(T._PLAN_CACHE) == 2
+    if "margin_cm" in other:  # the plan really was computed under each context's own margin
+        assert a.plans[ra["plan_id"]].route_before["margin_cm"] != b.plans[rb["plan_id"]].route_before["margin_cm"]

@@ -66,9 +66,13 @@ class Plan:
                 "layout_after": [f.to_dict(cal) for f in self.layout], "input_hash": self.input_hash}
 
 
-def input_hash(footprints, start, end, clearance_cm, extra=None) -> str:
-    payload = {"fp": [(f.id, f.locked, [round(c, 2) for xy in f.polygon.exterior.coords for c in xy])
-                      for f in footprints], "s": list(start), "e": list(end), "c": clearance_cm, "x": extra}
+def input_hash(footprints, start, end, clearance_cm, extra=None, board=None) -> str:
+    """Hash of every input that changes connectivity or the search: footprint geometry, lock flags and
+    uncertainty margins, the board size, both endpoints, the clearance, and caller extras (search bounds, raster cell)."""
+    payload = {"fp": [(f.id, f.locked, round(f.margin_cm, 4),
+                       [round(c, 2) for xy in f.polygon.exterior.coords for c in xy]) for f in footprints],
+               "b": None if board is None else [round(float(v), 4) for v in board],
+               "s": list(start), "e": list(end), "c": clearance_cm, "x": extra}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -85,7 +89,7 @@ def plan_moves(footprints: list[Footprint], board_w: float, board_h: float, star
     t0 = time.monotonic()
     ids = [f.id for f in footprints]
     assert len(set(ids)) == len(ids), "footprint ids must be unique"
-    ihash = input_hash(footprints, start, end, clearance_cm, [max_moves, grid_step_cm])
+    ihash = input_hash(footprints, start, end, clearance_cm, [max_moves, grid_step_cm, cell], (board_w, board_h))
     before = check_route(footprints, board_w, board_h, start, end, clearance_cm, cell=cell)
     movable = [f for f in footprints if not f.locked]
     cset = {"grid_step_cm": grid_step_cm, "max_moves": max_moves, "orientation": "unchanged",

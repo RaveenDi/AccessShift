@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..config import AgentCaps
-from ..domain.connectivity import check_route
+from ..domain.connectivity import CELL_CM, check_route
 from ..domain.footprints import Footprint
 from ..domain.search import Plan, input_hash, plan_moves
 
@@ -161,7 +161,9 @@ def t_search_moves(ctx: ToolContext, args: dict) -> dict:
     eff = _effective_locks(ctx, locked)
     fps = [f.locked_as(f.id in eff) for f in ctx.footprints]
     s_xy, e_xy = tuple(ctx.anchors[ctx.start_name]), tuple(ctx.anchors[ctx.end_name])
-    key = input_hash(fps, s_xy, e_xy, ctx.clearance_cm, [mm, ctx.grid_step_cm])
+    # the key must cover everything plan_moves reads: footprints (geometry, locks, margins), board, endpoints,
+    # clearance, search bounds and raster cell; it is also the plan_id, so it equals plan.input_hash
+    key = input_hash(fps, s_xy, e_xy, ctx.clearance_cm, [mm, ctx.grid_step_cm, CELL_CM], (ctx.board_w, ctx.board_h))
     plan = _PLAN_CACHE.get(key)
     if plan is None:
         plan = plan_moves(fps, ctx.board_w, ctx.board_h, s_xy, e_xy, ctx.clearance_cm, mm, ctx.grid_step_cm,
