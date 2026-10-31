@@ -41,6 +41,10 @@ def black(w=1200, h=900):
     return np.zeros((h, w, 3), np.uint8)
 
 
+# the two prompted boxes whose ids (0, 1) the recorded sam-onebit / sam-lossless replies answer (half-open right/bottom)
+BOXES = [("orange rectangle", (894, 181, 1078, 293)), ("blue rectangle", (576, 388, 711, 521))]
+
+
 def stub_decoder(payload, width, height):
     return b"\x01" * (width * height)
 
@@ -153,7 +157,7 @@ def test_sam_usage_has_no_tokens_and_is_costed_per_image():
     seen, calls = [], []
     tok = CALL_SINK.set(calls)
     try:
-        MetaPerception("k", serving("sam-onebit", seen), mask_decoder=stub_decoder).segment(black(), "orange rectangle")
+        MetaPerception("k", serving("sam-onebit", seen), mask_decoder=stub_decoder).segment(black(), BOXES)
     finally:
         CALL_SINK.reset(tok)
     assert seen[0][0] == "/v1/responses" and seen[0][1]["model"] == "sam-3.1"
@@ -161,21 +165,36 @@ def test_sam_usage_has_no_tokens_and_is_costed_per_image():
 
 
 def test_segment_places_each_decoded_raster_at_its_box_in_the_full_frame():
-    objs = MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(), "orange rectangle")
-    assert [o.label for o in objs] == ["orange rectangle"] * 2 and abs(objs[0].confidence - 0.773) < 1e-3
+    objs = MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(), BOXES)
+    assert [o.label for o in objs] == ["orange rectangle", "blue rectangle"]  # record id -> the name sent with that id
+    assert abs(objs[0].confidence - 0.773) < 1e-3 and abs(objs[1].confidence - 0.629) < 1e-3
     m = objs[0].mask
     assert m.shape == (900, 1200) and m.dtype == bool and m.sum() == 112 * 184
     assert m[181, 894] and m[292, 1077] and not m[180, 894] and not m[181, 1078]  # x2/y2 are inclusive
+    assert objs[1].mask.sum() == 133 * 135
 
 
-def test_sam_no_match_is_an_empty_text_and_an_empty_list():
+def test_sam_no_match_is_an_empty_text_and_no_mask_for_every_object():
     assert samlib.response_text(fx("sam-empty")["response"]) == ""
-    assert MetaPerception("k", serving("sam-empty", []), mask_decoder=stub_decoder).segment(black(), "giraffe") == []
+    assert MetaPerception("k", serving("sam-empty", []), mask_decoder=stub_decoder).segment(black(), BOXES) == [None, None]
+
+
+def test_sam_object_without_a_record_stays_none_and_the_others_keep_their_names():
+    three = BOXES + [("giraffe", (10, 10, 50, 50))]  # the recorded reply has records for ids 0 and 1 only
+    objs = MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(), three)
+    assert [o.label if o else None for o in objs] == ["orange rectangle", "blue rectangle", None]
+
+
+def test_sam_record_for_an_id_that_was_not_prompted_is_malformed():
+    with pytest.raises(ProviderError) as e:  # the recorded reply answers ids 0 and 1, only id 0 was sent
+        MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(), BOXES[:1])
+    assert e.value.kind == "malformed_response"
 
 
 def test_sam_frame_size_mismatch_is_malformed():
+    small = [("a", (10, 10, 50, 50)), ("b", (60, 60, 100, 100))]  # inside 640x480; the recorded reply is a 1200x900 frame
     with pytest.raises(ProviderError) as e:
-        MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(640, 480), "orange rectangle")
+        MetaPerception("k", serving("sam-onebit", []), mask_decoder=stub_decoder).segment(black(640, 480), small)
     assert e.value.kind == "malformed_response"
 
 
@@ -190,7 +209,7 @@ def test_sam_text_that_is_not_records_is_malformed_not_guessed():
 @pytest.mark.skipif(importlib.util.find_spec("meta_sam_parser") is not None, reason="decoder package installed")
 def test_without_meta_sam_parser_decoding_fails_with_a_clear_kind():
     with pytest.raises(ProviderError) as e:
-        MetaPerception("k", serving("sam-onebit", [])).segment(black(), "orange rectangle")
+        MetaPerception("k", serving("sam-onebit", [])).segment(black(), BOXES)
     assert e.value.kind == "mask_decoder_missing"
 
 
@@ -233,7 +252,7 @@ def test_our_record_parser_agrees_with_meta_stream_parser():
 def test_a_decoded_sam_mask_becomes_a_metric_footprint_of_the_right_size():
     from app.domain.calibration import calibrate
     from app.domain.footprints import footprint_from_mask
-    objs = MetaPerception("k", serving("sam-onebit", [])).segment(black(), "orange rectangle")
+    objs = MetaPerception("k", serving("sam-onebit", [])).segment(black(), BOXES)
     cal = calibrate([(0, 0), (1199, 0), (1199, 899), (0, 899)], 119.9, 89.9, [(100, 850), (300, 850)], 20, (1200, 900))
     fp = footprint_from_mask(objs[0].mask, cal, "o1", "orange rectangle", confidence=objs[0].confidence)
     x0, y0, x1, y1 = fp.polygon.bounds  # 10 px per cm; the box is 184 x 112 px

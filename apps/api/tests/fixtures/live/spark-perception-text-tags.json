@@ -1,0 +1,46 @@
+{
+ "_note": "Recorded Spark reply of the first live eval (2026-10-31, old perception prompt/schema, 2336x1744 synthetic photo of coloured wooden blocks). It shows the two defects fixed afterwards: labels were the printed tag text (including the door marker and the CHECK ruler) and the coordinates were on a 0-1000 normalized scale, not pixels. Only the response is kept (no image, no ids beyond the completion id).",
+ "image_size": [
+  2336,
+  1744
+ ],
+ "response": {
+  "id": "chatcmpl-01a1910e-2299-7385-851a-bc5b74d2a400",
+  "choices": [
+   {
+    "finish_reason": "stop",
+    "index": 0,
+    "message": {
+     "content": "{\"board_corners_px\": [[29, 37], [961, 32], [973, 962], [27, 961]], \"check_points_px\": [[570, 111], [882, 109]], \"labels\": [\"SOFA\", \"CHECK 2 m\", \"DESK\", \"DOOR\", \"ARMCHAIR\", \"PLANT\", \"SHELF\", \"BOX\"]}",
+     "refusal": null,
+     "role": "assistant"
+    },
+    "logprobs": null
+   }
+  ],
+  "created": 1793434985,
+  "model": "muse-spark-1.3",
+  "object": "chat.completion",
+  "usage": {
+   "completion_tokens": 1769,
+   "prompt_tokens": 4147,
+   "total_tokens": 5916,
+   "completion_tokens_details": {
+    "reasoning_tokens": 1676
+   },
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  }
+ },
+ "measured_tl_br_px_approx": [
+  [
+   44,
+   30
+  ],
+  [
+   2292,
+   1664
+  ]
+ ]
+}

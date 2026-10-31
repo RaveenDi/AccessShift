@@ -31,9 +31,9 @@ def test_meta_wire_run_reports_tokens_latency_and_cost(use_providers, demo_dir):
     assert all(s["api_calls"] == 1 and s["input_tokens"] > 0 and s["output_tokens"] == 20 and s["latency_ms"] >= 0
                and s["cost_usd_est"] > 0 and s["prompt_version"] == "pa-1" for s in turns)
     perc = next(s for s in t["steps"] if s["agent"] == "Perceiver")
-    assert perc["api_calls"] == 7 and perc["output_tokens"] == 20  # 1 label call + 6 SAM calls (one per label)
+    assert perc["api_calls"] == 2 and perc["output_tokens"] == 20  # 1 Spark call + 1 SAM call (all boxes at once)
     tot = t["totals"]
-    assert tot["api_calls"] == 7 + 5 and tot["input_tokens"] == sum(s["input_tokens"] or 0 for s in t["steps"])
+    assert tot["api_calls"] == 2 + 5 and tot["input_tokens"] == sum(s["input_tokens"] or 0 for s in t["steps"])
     assert tot["cost_usd_est"] == round(sum(s["cost_usd_est"] or 0 for s in t["steps"]), 6) and tot["cost_usd_est"] > 0
 
 

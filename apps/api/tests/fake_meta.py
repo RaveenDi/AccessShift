@@ -1,7 +1,8 @@
 """Offline stand-in for the Meta Model API used by tests (wire-format and fault-injection checks).
 
-Perception answers come from the repo's own colour-segmentation mock, SAM answers are rendered in the verified
-Responses-API text format (tests/fixtures/live/sam-*.json) with a test-only mask payload; planner answers come from
+Perception answers come from the repo's own colour-segmentation mock: Spark replies in the normalized 0-1000 object
+schema (tag names upper-case like the printed tags, boxes from the mock masks), SAM answers one box-prompt request per
+call, rendered in the verified Responses-API text format (tests/fixtures/live/sam-*.json) with a test-only mask payload; planner answers come from
 the scripted mock policy, translated to/from the verified OpenAI-style chat wire shape. It exercises plumbing
 only and says nothing about Muse Spark or SAM quality. Everything the server receives is kept in `requests`.
 """
@@ -10,6 +11,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
+import re
 import zlib
 
 import cv2
@@ -26,7 +29,7 @@ def fake_mask_decoder(payload: str, width: int, height: int) -> bytes:
     return zlib.decompress(base64.b64decode(payload[1:]))
 
 
-def sam_text(masks: list) -> str:
+def sam_text(masks: list, ids: list | None = None) -> str:
     """Render bool full-frame masks as SAM 3.1 output_text (one record per mask, box = tight bounding box)."""
     recs = []
     for i, m in enumerate(masks):
@@ -37,9 +40,26 @@ def sam_text(masks: list) -> str:
         crop = m[y1:y2 + 1, x1:x2 + 1].astype(np.uint8)
         payload = "!" + base64.b64encode(zlib.compress(crop.tobytes())).decode()
         h, w = m.shape
-        recs.append(f"{i}<|box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.9|>"
+        recs.append(f"{ids[i] if ids else i}<|box;x1={x1};y1={y1};x2={x2};y2={y2};w={w};h={h};c=0.9|>"
                     f"<|mask;x=0;y=0;c=0.9;data={y2 - y1 + 1},{x2 - x1 + 1},{payload}|>")
     return "<0f>" + ",".join(recs) + "\n" if recs else ""
+
+
+_BOX = re.compile(r"(\d+)<\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=\d+;h=\d+\|>")
+
+
+def spark_reply(res, size) -> dict:
+    """What a perfect Spark would answer for a PerceptionResult in pixels: 0-1000 normalized, tags upper-case."""
+    w, h = size
+    nx, ny = (lambda x: round(x / w * 1000, 3)), (lambda y: round(y / h * 1000, 3))
+    objects = []
+    for o in sorted(res.objects, key=lambda o: o.label):
+        ys, xs = np.nonzero(o.mask)
+        objects.append({"name": o.label.upper(), "box_norm1000": [
+            math.floor(xs.min() / w * 1000), math.floor(ys.min() / h * 1000),
+            math.ceil((xs.max() + 1) / w * 1000), math.ceil((ys.max() + 1) / h * 1000)]})
+    return {"board_corners_norm1000": [[nx(x), ny(y)] for x, y in res.board_corners_px],
+            "check_points_norm1000": [[nx(x), ny(y)] for x, y in res.check_points_px], "objects": objects}
 
 
 def _neutral(wire_msgs):
@@ -83,7 +103,7 @@ class FakeMeta:
         k = hashlib.sha256(b64.encode()).hexdigest()
         if k not in self._cache:
             img = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_COLOR)
-            self._cache[k] = self._perc.perceive(img)
+            self._cache[k] = (self._perc.perceive(img), (img.shape[1], img.shape[0]))
         return self._cache[k]
 
     def handle(self, request):
@@ -104,10 +124,7 @@ class FakeMeta:
             return httpx.Response(200, json=self._planner(body, msgs, self.planner_calls))
         content = msgs[0]["content"]
         img = next(p for p in content if p["type"] == "image_url")["image_url"]["url"].split(",", 1)[1]
-        res = self._perceive(img)
-        return httpx.Response(200, json=self._chat(json.dumps({
-            "labels": sorted({o.label for o in res.objects}), "board_corners_px": res.board_corners_px,
-            "check_points_px": res.check_points_px}), None, body))
+        return httpx.Response(200, json=self._chat(json.dumps(spark_reply(*self._perceive(img))), None, body))
 
     def _chat(self, content, tool_calls, body):
         msg = {"role": "assistant", "content": content}
@@ -129,16 +146,27 @@ class FakeMeta:
         return self._chat(turn.content, calls, body)
 
     def _segment(self, body):
+        """Answer a box-prompt request: each prompted id gets the mock object that overlaps its box the most."""
         parts = body["input"][0]["content"]
-        label = next(p for p in parts if p["type"] == "input_text")["text"]
-        res = self._perceive(next(p for p in parts if p["type"] == "input_image")["image_url"].split(",", 1)[1])
-        masks = [o.mask for o in res.objects if o.label == label]
-        mode = self.sam.get(label)
-        if mode == "none":
-            masks = []
-        elif isinstance(mode, str) and mode.startswith("merge:"):  # union with another label's masks
-            masks = [np.logical_or.reduce([*masks, *[o.mask for o in res.objects if o.label == mode[6:]]])]
-        text = sam_text(masks)
+        text = next(p for p in parts if p["type"] == "input_text")["text"]
+        res, _ = self._perceive(next(p for p in parts if p["type"] == "input_image")["image_url"].split(",", 1)[1])
+        ids, masks = [], []
+        for m in _BOX.finditer(text):
+            oid, x1, y1, x2, y2 = (int(g) for g in m.groups())
+            hit = np.zeros_like(res.objects[0].mask)
+            hit[y1:y2 + 1, x1:x2 + 1] = True
+            best = max(res.objects, key=lambda o: int((o.mask & hit).sum()))
+            if not (best.mask & hit).any():
+                continue
+            mode = self.sam.get(best.label)
+            if mode == "none":
+                continue
+            mask = best.mask
+            if isinstance(mode, str) and mode.startswith("merge:"):  # union with another label's masks
+                mask = np.logical_or.reduce([mask, *[o.mask for o in res.objects if o.label == mode[6:]]])
+            ids.append(oid)
+            masks.append(mask)
+        text = sam_text(masks, ids)
         return {"id": "resp_test", "object": "response", "status": "completed", "model": "sam-3.1", "error": None,
                 "output": [{"type": "message", "role": "assistant", "status": "completed",
                             "content": [{"type": "output_text", "text": text, "annotations": []}]}],
