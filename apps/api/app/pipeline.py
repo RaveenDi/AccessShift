@@ -96,16 +96,23 @@ def _decode(b: bytes) -> np.ndarray:
     return img
 
 
+def _source(res, key: str) -> str:
+    """' (refined)' / ' (seed)': where a calibration input came from, when the provider says (the mock does not)."""
+    return f" ({res.sources[key]})" if key in res.sources else ""
+
+
 def _perceive_and_calibrate(run: Run, photo: bytes, tag: str, perception):
     img = _decode(photo)
     h, w = img.shape[:2]
     with step(run.trace, "Perceiver", f"segment objects and find board markers ({tag})", perception.model,
               f"{w}x{h} image", kind="perception") as s:
         res = perception.perceive(img)
-        s.out(f"{len(res.objects)} objects ({', '.join(sorted({o.label for o in res.objects}))}), 4 corners, "
-              f"check ref, {len(res.issues)} provider issue(s)")
+        s.out(f"{len(res.objects)} objects ({', '.join(sorted({o.label for o in res.objects}))}), "
+              f"4 corners{_source(res, 'board_corners')}, check ref{_source(res, 'check_points')}, "
+              f"{len(res.issues)} provider issue(s)")
     with step(run.trace, "Calibrator", f"homography + independent length check ({tag})", "none (deterministic)",
-              f"board {run.board_w}x{run.board_h} cm, check {run.check_len} cm") as s:
+              f"board {run.board_w}x{run.board_h} cm{_source(res, 'board_corners')}, "
+              f"check {run.check_len} cm{_source(res, 'check_points')}") as s:
         cal = calibrate(res.board_corners_px, run.board_w, run.board_h, res.check_points_px, run.check_len, (w, h))
         s.out(f"check error {cal.check_error_pct:.2f}%, scale ratio {cal.scale_ratio:.2f}")
     fps, seen, masks = [], {}, []

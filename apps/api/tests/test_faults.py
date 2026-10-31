@@ -11,7 +11,7 @@ from app.providers.base import ProviderError
 from app.providers.http import BUDGET, CallBudgetExceeded, ModelClient, parse_retry_after
 from app.telemetry import CALL_SINK
 from conftest import img, start
-from fake_meta import FakeMeta, wire_tool_call
+from fake_meta import RULER, FakeMeta, wire_tool_call
 
 OK = {"choices": [{"message": {"content": "{}"}}]}
 
@@ -179,6 +179,37 @@ def test_sam_no_mask_falls_back_to_user_confirmation_without_planning(use_provid
     with pytest.raises(pipeline.PipelineError) as e:
         pipeline.confirm(run, accept_review_ids=["sofa"])
     assert e.value.code == 409 and "no mask" in str(e.value).lower()
+
+
+def coarse_spark(reply, size):
+    """Spark as the live eval saw it: corners ~1.5% of the image off, the check ruler ~7% too long."""
+    reply["board_corners_norm1000"] = [[x + dx, y + dy] for (x, y), (dx, dy) in zip(
+        reply["board_corners_norm1000"], [(15, 12), (-13, 10), (14, -11), (-12, -9)])]
+    (x0, y0), (x1, y1) = reply["check_points_norm1000"]
+    reply["check_points_norm1000"] = [[x0 - 8, y0 + 6], [x1 + 17, y1 - 5]]
+    return reply
+
+
+def test_coarse_spark_calibrates_through_the_refined_corners_and_ruler_and_the_trace_says_so(use_providers, demo_dir):
+    use_providers(FakeMeta(spark_edit=coarse_spark).providers())
+    run = start()
+    assert run.calibration.check_error_pct < 1.0  # the independent 3% check, on refined end points
+    assert any("board corners: refined" in n for n in run.perception_notes)
+    assert any("check ruler end points: refined" in n for n in run.perception_notes)
+    steps = {t["agent"]: t for t in run.trace}
+    assert "4 corners (refined), check ref (refined)" in steps["Perceiver"]["output_summary"]
+    assert "(refined)" in steps["Calibrator"]["input_summary"]
+
+
+def test_without_a_ruler_mask_the_coarse_seed_is_used_and_still_fails_the_unchanged_length_check(use_providers, demo_dir):
+    use_providers(FakeMeta(spark_edit=coarse_spark, sam={RULER: "none"}).providers())
+    with pytest.raises(pipeline.PipelineError) as e:
+        start()
+    assert "independent check length" in str(e.value) and "> 3.0%" in str(e.value)
+    run = [r for r in pipeline.RUNS.values() if r.status == "failed"][-1]  # the run just made (RUNS keeps order)
+    cal = next(t for t in run.trace if t["agent"] == "Calibrator")
+    assert "board 500.0x350.0 cm (refined), check 200.0 cm (seed)" in cal["input_summary"]  # which source was used
+    assert "(seed)" in next(t for t in run.trace if t["agent"] == "Perceiver")["output_summary"]
 
 
 def test_sam_merged_masks_are_flagged_and_need_explicit_acceptance(use_providers, demo_dir):
