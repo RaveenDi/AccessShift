@@ -210,3 +210,24 @@ def test_plan_cache_is_not_shared_across_board_size_or_margin(monkeypatch, other
     assert len(T._PLAN_CACHE) == 2
     if "margin_cm" in other:  # the plan really was computed under each context's own margin
         assert a.plans[ra["plan_id"]].route_before["margin_cm"] != b.plans[rb["plan_id"]].route_before["margin_cm"]
+
+
+def test_finish_rejects_a_plan_searched_under_different_route_inputs(monkeypatch):
+    monkeypatch.setattr(T, "_PLAN_CACHE", {})
+    ctx = _scene_ctx()
+    pid = _search(ctx, clearance=90)["plan_id"]
+    # same route inputs: accepted
+    assert T.execute(ctx, "finish", {"plan_id": pid})["accepted"] is True
+    # clearance changed after the search: the old plan is stale
+    ctx.final_plan_id = None
+    T.execute(ctx, "check_route", {"clearance_cm": 60, "start": "door", "end": "desk"})
+    with pytest.raises(T.ToolError, match="search_moves again"):
+        T.execute(ctx, "finish", {"plan_id": pid})
+    assert ctx.final_plan_id is None
+    # searching again under the new clearance gives a plan that can be finished
+    new_pid = T.execute(ctx, "search_moves", {"max_moves": 1, "locked_ids": []})["plan_id"]
+    assert new_pid != pid and T.execute(ctx, "finish", {"plan_id": new_pid})["accepted"] is True
+    # endpoints changed after the search: stale again
+    T.execute(ctx, "check_route", {"clearance_cm": 60, "start": "desk", "end": "door"})
+    with pytest.raises(T.ToolError, match="search_moves again"):
+        T.execute(ctx, "finish", {"plan_id": new_pid})

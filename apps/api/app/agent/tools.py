@@ -78,6 +78,7 @@ class ToolContext:
     end_name: str | None = None
     asks: int = 0
     plans: dict = field(default_factory=dict)
+    plan_routes: dict = field(default_factory=dict)  # plan_id -> (clearance_cm, start, end) it was searched under
     last_plan_id: str | None = None
     final_plan_id: str | None = None
     summary: str = ""
@@ -172,6 +173,7 @@ def t_search_moves(ctx: ToolContext, args: dict) -> dict:
             _PLAN_CACHE[key] = plan
     pid = plan.input_hash
     ctx.plans[pid] = plan
+    ctx.plan_routes[pid] = (ctx.clearance_cm, ctx.start_name, ctx.end_name)
     ctx.last_plan_id = pid
     ev = {k: v for k, v in plan.evaluated.items() if k != "seconds"}  # wall time is not replay-stable
     return {"plan_id": pid, "status": plan.status, "message": plan.message, "n_moves": len(plan.moves),
@@ -217,6 +219,11 @@ def t_finish(ctx: ToolContext, args: dict) -> dict:
     plan: Plan | None = ctx.plans.get(pid)
     if plan is None:
         raise ToolError(f"unknown plan_id; use a plan_id returned by search_moves (known: {sorted(ctx.plans)})")
+    searched = ctx.plan_routes.get(pid)
+    current = (ctx.clearance_cm, ctx.start_name, ctx.end_name)
+    if searched != current:
+        raise ToolError(f"plan '{pid}' was searched for clearance/route {searched}, but the current route is "
+                        f"{current}; call search_moves again under the current route before finish")
     summary = args.get("summary", "")
     if not isinstance(summary, str):
         raise ToolError("'summary' must be a string")
