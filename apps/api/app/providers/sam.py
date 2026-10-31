@@ -3,8 +3,18 @@
 Route   : POST /v1/responses (not a dedicated endpoint, not chat completions), model "sam-3.1".
 Request : {"model": "sam-3.1", "metadata": {"include_confidence": "true", "mask_encoding": "one_bit"},
            "input": [{"type": "message", "role": "user", "content": [
-               {"type": "input_text", "text": "<ONE short noun phrase>"},
+               {"type": "input_text", "text": "<prompt>"},
                {"type": "input_image", "image_url": "data:image/png;base64,..."}]}]}
+Prompt  : VERIFIED live: one short noun phrase (matches nothing on a photo of tagged blocks: the first live eval sent
+          the printed tags "SOFA", "DESK", ... and got empty text 27 times). Used from 2026-10-31 instead: ONE call with
+          box prompts for all objects, text built by Meta's `meta_sam_parser.build_object_prompt` (documented on
+          dev.meta.ai/docs/sam/client-libraries): "<0f>" then "ID<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H|>" per object,
+          x2/y2 inclusive (the builder takes half-open right/bottom). At most 16 objects per call (API limit); object
+          ids are 0..n-1 within a call and map back to the names Spark gave.
+          UNVERIFIED until the tower's next live run: how the live API answers a box-prompt request (that it returns
+          one record per prompted id, in the record format below, and no record for an object it cannot segment).
+          Only the request text is checked offline (against the library) and the reply parsing on the recorded
+          noun-phrase replies; a record with an id we did not send is rejected as malformed.
 Response: a Responses-API object; the result is TEXT in output[0].content[0].text (type "output_text"):
           one line per frame starting "<0f>", then records "ID<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H;c=C|>
           <|mask;x=0;y=0;c=C;data=H,W,PAYLOAD|>" separated by commas. Boxes are pixel corners, x2/y2 inclusive,
@@ -20,6 +30,7 @@ Payload : first char is the encoding marker ("!" one_bit, "~" lossless), then a 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Callable
 
@@ -33,6 +44,9 @@ SAM_METADATA = {"include_confidence": "true", "mask_encoding": "one_bit"}
 _RECORD = re.compile(
     r"(?P<id>\d+)<\|box;(?P<box>[^|]*)\|><\|mask;(?P<mask>[^|]*?);data=(?P<h>\d+),(?P<w>\d+),(?P<payload>[^|<>,;]+)\|>")
 MAX_RECORDS = 64  # a malformed or hostile reply must not allocate unbounded masks
+
+MAX_OBJECTS_PER_CALL = 16  # SAM API limit on box-prompted objects per request
+Box = tuple[int, int, int, int]  # left, top, right, bottom in image pixels; right/bottom are half-open
 
 Decoder = Callable[[str, int, int], bytes]  # (payload incl. marker, width, height) -> H*W bytes of 0/1
 
@@ -52,9 +66,28 @@ class SamRecord:
     confidence: float | None
 
 
-def sam_request(image_png_b64: str, label: str) -> dict:
+def sam_request(image_png_b64: str, text: str) -> dict:
+    """The verified /v1/responses request; `text` is the prompt (see box_prompt)."""
     return {"model": SAM_MODEL, "metadata": dict(SAM_METADATA), "input": [{"type": "message", "role": "user", "content": [
-        {"type": "input_text", "text": label}, {"type": "input_image", "image_url": "data:image/png;base64," + image_png_b64}]}]}
+        {"type": "input_text", "text": text}, {"type": "input_image", "image_url": "data:image/png;base64," + image_png_b64}]}]}
+
+
+def box_prompt(size: tuple[int, int], boxes: Sequence[Box]) -> str:
+    """Object-prompt text for one frame: object i gets id i and the box `boxes[i]` (left, top, right, bottom; right and
+    bottom half-open). Built by Meta's own builder so the grammar is never hand-written."""
+    if not 1 <= len(boxes) <= MAX_OBJECTS_PER_CALL:
+        raise ProviderError(f"sam takes 1-{MAX_OBJECTS_PER_CALL} box prompts per call, got {len(boxes)}")
+    try:
+        from meta_sam_parser import FramePrompt, ObjectPromptError, PromptBox, PromptObject, build_object_prompt
+    except ImportError:
+        raise ProviderError("building SAM box prompts needs the optional package: pip install meta-sam-parser==0.1.0",
+                            kind="mask_decoder_missing") from None
+    try:
+        return build_object_prompt(size=(int(size[0]), int(size[1])), objects=[
+            PromptObject(id=i, prompts=[FramePrompt(frame=0, box=PromptBox(*(int(v) for v in b)))])
+            for i, b in enumerate(boxes)])
+    except ObjectPromptError as e:
+        raise ProviderError(f"sam box prompt rejected ({e.code})") from None
 
 
 def _bad(msg: str) -> ProviderError:
